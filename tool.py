@@ -1,6 +1,7 @@
 from nipy import load_image
 from setting import LABEL_PATH,IMAGE_PATH
 import torch
+from torch.utils.data import Dataset
 import numpy as np
 
 def get_files():

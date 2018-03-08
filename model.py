@@ -113,7 +113,7 @@ class Unet(nn.Module):
 
 class focalloss(nn.Module):
     def __init__(self,alpha):
-        super(focallogloss, self).__init__()
+        super(focalloss, self).__init__()
         self.alpha = alpha
     def forward(self,y_pred,y_true):
         weight1 = torch.pow(1-y_pred,self.alpha)
@@ -123,6 +123,15 @@ class focalloss(nn.Module):
                     (1-y_true) * torch.log(1-y_pred) * weight2
                 )
         loss = torch.sum(loss)/(y_true.size()[0]*6)
+        return  loss
+
+class diceloss(nn.Module):
+    def __init__(self,smooth):
+        super(diceloss, self).__init__()
+        self.smooth = smooth
+    def forward(self,y_pred,y_true):
+        loss = -(torch.sum(y_pred*y_true)
+                   +self.smooth)/(torch.sum(y_true)+torch.sum(y_pred)+self.smooth)
         return  loss
 
 
