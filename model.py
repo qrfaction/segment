@@ -125,6 +125,15 @@ class focalloss(nn.Module):
         loss = torch.sum(loss)/(y_true.size()[0]*6)
         return  loss
 
+class celoss(nn.Module):
+    def __init__(self):
+        super(celoss, self).__init__()
+    def forward(self,y_pred,y_true):
+        loss = y_true * y_pred.log()
+        loss = -loss.mean()
+        return  loss
+
+
 class diceloss(nn.Module):
     def __init__(self,smooth):
         super(diceloss, self).__init__()

@@ -1,5 +1,5 @@
 from nipy import save_image
-from model import Unet,focalloss
+from model import Unet,focalloss,celoss
 from Nadam import Nadam
 from torch import nn
 import torch
@@ -8,7 +8,7 @@ import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K
 
 class get_model:
-    def __init__(self,files,alpha = 3,loss = 'focalLoss'):
+    def __init__(self,files,alpha = 3,loss = 'ceLoss'):
         super(get_model,self).__init__()
 
         # self.basenet = nn.DataParallel(baseNet(dim, embedding_matrix,trainable)).cuda()
@@ -22,7 +22,7 @@ class get_model:
         if loss == 'focalLoss':
             self.loss_f = focalloss(alpha=alpha)
         elif loss =='ceLoss':
-            self.loss_f = nn.BCELoss()
+            self.loss_f = celoss()
         elif loss=='dice_metric':
             pass
 
@@ -42,13 +42,15 @@ class get_model:
         X = get_images(x_files,volatile=True)
         y_pred = self.basenet(X)
         self.basenet.train()
-        return -y_pred.numpy()
+        return y_pred.numpy()
 
 def train_model(model,modelname,train_files,val_files,batchsize = BATCHSIZE):
     def dice_metric(y_pred,y):
         score = 0
         for i,j in zip(y_pred,y):
+            i = np.around(i)
             score +=2*np.sum(i*j)/(np.sum(i)+np.sum(j))
+        score = score/len(y)
         return score
 
     dataset = Generator(train_files)
@@ -67,7 +69,7 @@ def train_model(model,modelname,train_files,val_files,batchsize = BATCHSIZE):
 
             if iter>= 1:
                 # evaulate
-                y_pred = model.predict(val_files, batch_size=2048, verbose=1)
+                y_pred = model.predict(val_files)
                 cur_score = dice_metric(y_pred,samples_y)
                 print(cur_score)
 
@@ -98,4 +100,4 @@ def main():
         validset = files[valid_index]
 
         model = get_model(trainset)
-        train_model(model,"baseline" ,trainset,validset,batchsize=5 )
+        train_model(model,"baseline" ,trainset,validset,batchsize=16)
