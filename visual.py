@@ -211,28 +211,23 @@ def EDA(labels,images,id):
     with open(id+'effec_range.json','w') as f:
         f.write(json.dumps(effec_range,indent=4, separators=(',', ': ')))
 
-if __name__=='__main__':
+def EDA_warp():
     files = get_files(PRE_IMAGE_PATH, prefix=False)
-
-
-    size = set([])
-
-    labels = []
-    images = []
-    for i in range(len(files)):
-        im = load_image(PRE_IMAGE_PATH+files[i]).get_data()
-        size.add(im.shape)
-        if im.shape == (256,256,180,1):
-            labels.append(PRE_LABEL_PATH+files[i])
-            images.append(PRE_IMAGE_PATH+files[i])
-    print(size)
-    EDA(labels,images,'180')
 
     labels = []
     images = []
     for i in range(len(files)):
         im = load_image(PRE_IMAGE_PATH + files[i]).get_data()
-        size.add(im.shape)
+        if im.shape == (256, 256, 180, 1):
+            labels.append(PRE_LABEL_PATH + files[i])
+            images.append(PRE_IMAGE_PATH + files[i])
+
+    EDA(labels, images, '180')
+
+    labels = []
+    images = []
+    for i in range(len(files)):
+        im = load_image(PRE_IMAGE_PATH + files[i]).get_data()
         if im.shape == (256, 256, 166, 1):
             labels.append(PRE_LABEL_PATH + files[i])
             images.append(PRE_IMAGE_PATH + files[i])
@@ -242,21 +237,13 @@ if __name__=='__main__':
     images = []
     for i in range(len(files)):
         im = load_image(PRE_IMAGE_PATH + files[i]).get_data()
-        size.add(im.shape)
-        if im.shape == (256, 256, 160, 1):
-            labels.append(PRE_LABEL_PATH + files[i])
-            images.append(PRE_IMAGE_PATH + files[i])
-    EDA(labels, images, '256  160')
-
-    labels = []
-    images = []
-    for i in range(len(files)):
-        im = load_image(PRE_IMAGE_PATH + files[i]).get_data()
-        size.add(im.shape)
-        if im.shape == (192,192, 160, 1):
+        if im.shape == (192, 192, 160, 1):
             labels.append(PRE_LABEL_PATH + files[i])
             images.append(PRE_IMAGE_PATH + files[i])
     EDA(labels, images, '192')
+
+if __name__=='__main__':
+    EDA_warp()
 
 
 

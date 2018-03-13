@@ -56,6 +56,8 @@ def block_warp(block_name,in_dim,out_dim,in_size,out_size,kernel_size=np.array([
             nn.LeakyReLU(0.1),
         )
 
+
+
 class Unet(nn.Module):
 
     def __init__(self):
@@ -87,7 +89,6 @@ class Unet(nn.Module):
                 nn.Softmax()    # batch  channel  w d h
             )
 
-
     def forward(self, x):
         conv0 = self.conv0(x)
         conv1 = self.conv1(self.maxpool1(conv0))
@@ -104,6 +105,7 @@ class Unet(nn.Module):
         output = self.out_layer(deconv6)              # 192,192,160  3
         output = output.squeeze()
         return output
+
 
 
 class focalloss(nn.Module):
@@ -128,7 +130,6 @@ class celoss(nn.Module):
         loss = -loss.mean()
         return  loss
 
-
 class diceloss(nn.Module):
     def __init__(self,smooth):
         super(diceloss, self).__init__()
@@ -138,8 +139,12 @@ class diceloss(nn.Module):
                    +self.smooth)/(torch.sum(y_true)+torch.sum(y_pred)+self.smooth)
         return  loss
 
-
-
+def dice_metric(y_pred,y):
+    score = 0
+    for i,j in zip(y_pred,y):
+        score +=2*np.sum(i*j)/(np.sum(i)+np.sum(j))
+    score = score/len(y)
+    return score
 
 
 

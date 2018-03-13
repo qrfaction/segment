@@ -1,27 +1,29 @@
-from nipy import save_image
-from model import Unet,focalloss,celoss
+from model import Unet,focalloss,celoss,dice_metric
 from Nadam import Nadam
-from setting import LABEL_PATH
-from torch import nn
+from tensorboardX import SummaryWriter
 import torch
 from tool import get_batch_images,Generator,get_files
 import numpy as np
-from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH
+from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
+
 
 torch.backends.cudnn.enabled = False
 
 
 class get_model:
-    def __init__(self,alpha = 3,loss = 'ceLoss',use_gpu=True):
-        super(get_model,self).__init__()
+    def __init__(self,valfiles,alpha = 3,loss = 'ceLoss',use_gpu=True):
 
-        # self.basenet = nn.DataParallel(baseNet(dim, embedding_matrix,trainable)).cuda()
         self.basenet = Unet()
         if use_gpu:
             self.basenet.cuda()
 
+        print(self.basenet)
+
         self.use_gpu = use_gpu
 
+        self.writer = SummaryWriter(SUMMARY_PATH)
+
+        self.get_valset(val_files=valfiles)
 
         self.optimizer = Nadam(self.basenet.parameters(),lr=0.001)
         self.basenet.train()
@@ -33,6 +35,19 @@ class get_model:
         elif loss=='dice_metric':
             pass
 
+        self.iter = 0
+
+    def get_valset(self,val_files):
+        val_images = [IMAGE_PATH + f for f in val_files]
+        val_labels = [LABEL_PATH + f for f in val_files]
+        self.val_images = get_batch_images(val_images)
+
+        labels = []
+        for f in val_labels:
+            labels.append(np.load(f))
+        self.val_labels = np.array(labels)
+
+
     def fit(self,X,Y):
         if self.use_gpu:
             X = X.cuda()
@@ -41,10 +56,13 @@ class get_model:
         Y = torch.autograd.Variable(Y)
         y_pred = self.basenet(X)
         loss = self.loss_f(y_pred, Y)
+
+        self.iter+=1
+        self.writer.add_scalar('trainset/Loss',loss[0],self.iter)
+
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-
 
     def predict(self,X):
         self.basenet.eval()
@@ -58,6 +76,11 @@ class get_model:
             return y_pred.cpu().numpy()
         return y_pred.numpy()
 
+    def evaluate(self):
+        y_pred = self.predict(self.val_images)
+        score = dice_metric(y_pred,self.val_labels)
+        self.writer.add_scalar('validset/scores',score,self.iter)
+        return score
 
     def save(self,path):
         torch.save(self.basenet.state_dict(),path)
@@ -65,23 +88,9 @@ class get_model:
     def load(self,path):
         self.basenet.load_state_dict(torch.load(path))
 
-def train_model(model,modelname,train_files,val_files,batchsize = BATCHSIZE):
-    def dice_metric(y_pred,y):
-        score = 0
-        for i,j in zip(y_pred,y):
-            score +=2*np.sum(i*j)/(np.sum(i)+np.sum(j))
-        score = score/len(y)
-        return score
 
-    def get_val_images(val_files):
-        val_images = [IMAGE_PATH + f for f in val_files]
-        val_labels = [LABEL_PATH + f for f in val_files]
-        val_images = get_batch_images(val_images)
-        labels = []
-        for f in val_labels:
-            labels.append(np.load(f))
-        labels = np.array(labels)
-        return val_images,labels
+
+def train_model(model,train_files,batchsize = BATCHSIZE):
 
     dataset = Generator(train_files)
     loader = torch.utils.data.DataLoader(
@@ -92,29 +101,18 @@ def train_model(model,modelname,train_files,val_files,batchsize = BATCHSIZE):
     )
     iter = 1
     best_score = -1
-
-    val_images,val_labels = get_val_images(val_files)
-
+    best_epoch = 1
     while True:
         for samples_x,samples_y in loader:
             model.fit(samples_x,samples_y)
-
-            if iter >= 1:
-                # evaulate
-                y_pred = model.predict(val_images)
-                cur_score = dice_metric(y_pred,val_labels)
-
-                if iter == 1 or best_score < cur_score:
-                    best_score = cur_score
-                    best_epoch = iter
-                    best_result = y_pred
-                    print(best_score, best_epoch, '\n')
-                    # model.save(MODEL_PATH+modelname+ '.pkl')
-                elif iter - best_epoch > 50:  # patience 为5
-                    # for output,file in zip(best_result,val_files):
-                    #     output = np.around(output)
-                    #     np.save(OUTPUT+file,output)
-                    return best_score
+            cur_score = model.evaluate()
+            if  best_score < cur_score:
+                best_score = cur_score
+                best_epoch = iter
+                print(best_score, best_epoch, '\n')
+            elif iter - best_epoch > 50:  # patience 为5
+                model.writer.close()
+                return best_score
             iter += 1
 
 
@@ -130,9 +128,9 @@ def main(use_gpu=True):
         trainset = files[train_index]
         validset = files[valid_index]
 
-        model = get_model(use_gpu=use_gpu)
+        model = get_model(valfiles=validset,use_gpu=use_gpu)
 
-        train_model(model,"baseline" ,trainset,validset,batchsize=1)
+        train_model(model,trainset,batchsize=1)
 
 if __name__=='__main__':
     main(True)

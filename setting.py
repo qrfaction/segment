@@ -1,7 +1,7 @@
 
 
 
-
+SUMMARY_PATH = 'summary/'
 PRE_LABEL_PATH = 'label-part1/'
 PRE_IMAGE_PATH = 'atlas-part1/'
 LABEL_PATH = 'label/'
