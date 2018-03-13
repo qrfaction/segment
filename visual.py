@@ -1,6 +1,6 @@
 from tool import get_files
 from nipy import load_image
-from setting import LABEL_PATH,IMAGE_PATH
+from setting import LABEL_PATH,IMAGE_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH
 from tqdm import tqdm
 import json
 import multiprocessing as mlp
@@ -152,10 +152,9 @@ def image_anaylizer(images,labels):
 
     return pos,vixel,effec_range
 
-def EDA():
-    files = get_files()
-    labels = [LABEL_PATH + f for f in files]
-    images = [IMAGE_PATH + f for f in files]
+def EDA(labels,images,id):
+
+
     effec_range = {}
     pos = {
         'x1':{},
@@ -205,23 +204,59 @@ def EDA():
     for key in vixel.keys():
         vixel[key]=sorted(vixel[key].items(),key=lambda x:x[0],reverse = True)
 
-    with open('pos.json','w') as f:
+    with open(id+'pos.json','w') as f:
         f.write(json.dumps(pos,indent=4, separators=(',', ': ')))
-    with open('vixel.json','w') as f:
+    with open(id+'vixel.json','w') as f:
         f.write(json.dumps(vixel,indent=4, separators=(',', ': ')))
-    with open('effec_range.json','w') as f:
+    with open(id+'effec_range.json','w') as f:
         f.write(json.dumps(effec_range,indent=4, separators=(',', ': ')))
 
 if __name__=='__main__':
-    EDA()
+    files = get_files(PRE_IMAGE_PATH, prefix=False)
 
 
+    size = set([])
 
+    labels = []
+    images = []
+    for i in range(len(files)):
+        im = load_image(PRE_IMAGE_PATH+files[i]).get_data()
+        size.add(im.shape)
+        if im.shape == (256,256,180,1):
+            labels.append(PRE_LABEL_PATH+files[i])
+            images.append(PRE_IMAGE_PATH+files[i])
+    print(size)
+    EDA(labels,images,'180')
 
+    labels = []
+    images = []
+    for i in range(len(files)):
+        im = load_image(PRE_IMAGE_PATH + files[i]).get_data()
+        size.add(im.shape)
+        if im.shape == (256, 256, 166, 1):
+            labels.append(PRE_LABEL_PATH + files[i])
+            images.append(PRE_IMAGE_PATH + files[i])
+    EDA(labels, images, '256_166')
 
+    labels = []
+    images = []
+    for i in range(len(files)):
+        im = load_image(PRE_IMAGE_PATH + files[i]).get_data()
+        size.add(im.shape)
+        if im.shape == (256, 256, 160, 1):
+            labels.append(PRE_LABEL_PATH + files[i])
+            images.append(PRE_IMAGE_PATH + files[i])
+    EDA(labels, images, '256  160')
 
-
-
+    labels = []
+    images = []
+    for i in range(len(files)):
+        im = load_image(PRE_IMAGE_PATH + files[i]).get_data()
+        size.add(im.shape)
+        if im.shape == (192,192, 160, 1):
+            labels.append(PRE_LABEL_PATH + files[i])
+            images.append(PRE_IMAGE_PATH + files[i])
+    EDA(labels, images, '192')
 
 
 
