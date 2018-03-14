@@ -168,14 +168,14 @@ def EDA(labels,images,id):
         'brain_z':{},
     }
     vixel = {
-        'vixel1':{},
-        'vixel2':{},
-        'brain_vixel': {},
+        'voxel1':{},
+        'voxel2':{},
+        'brain_voxel': {},
     }
 
     results = []
     pool = mlp.Pool(mlp.cpu_count())
-    aver_t = int(len(files) / mlp.cpu_count()) + 1
+    aver_t = int(len(labels) / mlp.cpu_count()) + 1
     for i in range(mlp.cpu_count()):
         result = pool.apply_async(image_anaylizer,
                                   args=(images[i * aver_t:(i + 1) * aver_t],
@@ -206,7 +206,7 @@ def EDA(labels,images,id):
 
     with open(id+'pos.json','w') as f:
         f.write(json.dumps(pos,indent=4, separators=(',', ': ')))
-    with open(id+'vixel.json','w') as f:
+    with open(id+'voxel.json','w') as f:
         f.write(json.dumps(vixel,indent=4, separators=(',', ': ')))
     with open(id+'effec_range.json','w') as f:
         f.write(json.dumps(effec_range,indent=4, separators=(',', ': ')))

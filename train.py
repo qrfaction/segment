@@ -1,8 +1,8 @@
-from model import Unet,focalloss,celoss,dice_metric
+from model import Unet,focalloss,celoss,dice_metric,ce_loss
 from Nadam import Nadam
 from tensorboardX import SummaryWriter
 import torch
-from tool import get_batch_images,Generator,get_files
+from tool import get_batch_images,Generator,get_files,get_total_segment
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
 
@@ -11,6 +11,7 @@ torch.backends.cudnn.enabled = False
 
 
 class get_model:
+
     def __init__(self,valfiles,alpha = 3,loss = 'ceLoss',use_gpu=True):
 
         self.basenet = Unet()
@@ -23,7 +24,8 @@ class get_model:
 
         self.writer = SummaryWriter(SUMMARY_PATH)
 
-        self.get_valset(val_files=valfiles)
+        self.valfiles = valfiles
+        self.get_valset()
 
         self.optimizer = Nadam(self.basenet.parameters(),lr=0.001)
         self.basenet.train()
@@ -37,16 +39,15 @@ class get_model:
 
         self.iter = 0
 
-    def get_valset(self,val_files):
-        val_images = [IMAGE_PATH + f for f in val_files]
-        val_labels = [LABEL_PATH + f for f in val_files]
+    def get_valset(self):
+        val_images = [IMAGE_PATH + f for f in self.valfiles]
+        val_labels = [LABEL_PATH + f for f in self.valfiles]
         self.val_images = get_batch_images(val_images)
 
         labels = []
         for f in val_labels:
             labels.append(np.load(f))
         self.val_labels = np.array(labels)
-
 
     def fit(self,X,Y):
         if self.use_gpu:
@@ -79,7 +80,9 @@ class get_model:
     def evaluate(self):
         y_pred = self.predict(self.val_images)
         score = dice_metric(y_pred,self.val_labels)
+        loss = ce_loss(y_pred,self.val_labels)
         self.writer.add_scalar('validset/scores',score,self.iter)
+        self.writer.add_scalar('validset/loss', loss, self.iter)
         return score
 
     def save(self,path):
@@ -88,9 +91,12 @@ class get_model:
     def load(self,path):
         self.basenet.load_state_dict(torch.load(path))
 
+    def get_segment(self):
+        y_pred = self.predict(self.val_images)
+        for y_p,filename in zip(y_pred,self.valfiles):
+            get_total_segment(y_p,filename)
 
-
-def train_model(model,train_files,batchsize = BATCHSIZE):
+def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline'):
 
     dataset = Generator(train_files)
     loader = torch.utils.data.DataLoader(
@@ -109,8 +115,11 @@ def train_model(model,train_files,batchsize = BATCHSIZE):
             if  best_score < cur_score:
                 best_score = cur_score
                 best_epoch = iter
+                model.save(MODEL_PATH+model_name+'.pkl')
                 print(best_score, best_epoch, '\n')
             elif iter - best_epoch > 50:  # patience 为5
+                model.load(MODEL_PATH+model_name+'.pkl')
+
                 model.writer.close()
                 return best_score
             iter += 1
@@ -131,6 +140,6 @@ def main(use_gpu=True):
         model = get_model(valfiles=validset,use_gpu=use_gpu)
 
         train_model(model,trainset,batchsize=1)
-
+        break
 if __name__=='__main__':
     main(True)

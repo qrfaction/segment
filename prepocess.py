@@ -1,21 +1,20 @@
 from tool import get_files
 from nipy import load_image,save_image
-from setting import IMAGE_PATH,LABEL_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH
+from setting import IMAGE_PATH,LABEL_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH,INFO
 import numpy as np
 from tqdm import tqdm
+import json
 from nipy.core.api import Image, AffineTransform
 
-def get_label():
-    images = get_files(PRE_IMAGE_PATH)
-    labels = get_files(PRE_LABEL_PATH)
+def get_shape():
+    images = get_files(PRE_IMAGE_PATH,prefix=False)
+    im_shapes = {}
+    for f in images:
+        im = load_image(PRE_IMAGE_PATH+f).get_data()
+        im_shapes[f] = str(im.shape[3])
 
-    for f_i,f_l in zip(images,labels):
-        im = load_image(f_i)
-        label = load_image(f_l)
-
-        print(im.coordmap,label.coordmap)
-        # print(im.shape,label.shape)
-        break
+    with open(INFO+'shape.json','w') as f:
+        f.write(json.dumps(im_shapes,indent=4, separators=(',', ': ')))
 
 def crop_image():
     images = get_files(PRE_IMAGE_PATH)
@@ -56,7 +55,7 @@ def crop_image():
         np.save(LABEL_PATH + f_l[len(PRE_LABEL_PATH):-7]+'.npy',label)
 
 if __name__=='__main__':
-    crop_image()
+    get_shape()
     # get_label()
 
 

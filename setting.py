@@ -8,6 +8,7 @@ LABEL_PATH = 'label/'
 IMAGE_PATH = 'image/'
 MODEL_PATH = 'model/'
 OUTPUT = 'output/'
+INFO = 'img_info/'
 BATCHSIZE = 5
 K = 10   # 交叉验证
 
@@ -201,7 +202,12 @@ x: 117   y: 145   z: 119
 
 
 
+{
+    'x1':{
+        pos:
+    }
 
+}
 
 
 

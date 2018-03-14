@@ -146,7 +146,14 @@ def dice_metric(y_pred,y):
     score = score/len(y)
     return score
 
-
+def ce_loss(y_pred,y):
+    score = 0
+    for i, j in zip(y_pred, y):
+        loss= y*np.log(y_pred)
+        loss = -np.mean(loss)
+        score +=loss
+    score = score / len(y)
+    return score
 
 
 
