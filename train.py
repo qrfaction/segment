@@ -1,18 +1,19 @@
-from model import Unet,focalloss,celoss,dice_metric,ce_loss
+from model import Unet,focalloss,celoss,dice_metric,ce_loss,diceloss
 from Nadam import Nadam
+from torch import optim
 from tensorboardX import SummaryWriter
 import torch
 from tool import get_batch_images,Generator,get_files,get_total_segment
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
-
+from torch import nn
 
 torch.backends.cudnn.enabled = False
 
 
 class get_model:
 
-    def __init__(self,valfiles,alpha = 3,loss = 'ceLoss',use_gpu=True):
+    def __init__(self,valfiles,alpha = 3,loss = 'dice_metric',use_gpu=True):
 
         self.basenet = Unet()
         if use_gpu:
@@ -27,15 +28,17 @@ class get_model:
         self.valfiles = valfiles
         self.get_valset()
 
-        self.optimizer = Nadam(self.basenet.parameters(),lr=0.001)
+        self.optimizer = Nadam(self.basenet.parameters(),lr=0.0002,schedule_decay=0.004)
+
         self.basenet.train()
 
         if loss == 'focalLoss':
             self.loss_f = focalloss(alpha=alpha)
         elif loss =='ceLoss':
             self.loss_f = celoss()
+            # self.loss_f = nn.BCELoss()
         elif loss=='dice_metric':
-            pass
+            self.loss_f = diceloss()
 
         self.iter = 0
 
@@ -79,10 +82,16 @@ class get_model:
 
     def evaluate(self):
         y_pred = self.predict(self.val_images)
+
+        images = self.val_images.numpy()
+        for i,I in enumerate(images):
+            y_pred[i][I>=800] = 0
+            y_pred[i][I<=100] = 0
+
         score = dice_metric(y_pred,self.val_labels)
-        loss = ce_loss(y_pred,self.val_labels)
+        # loss = ce_loss(y_pred,self.val_labels)
         self.writer.add_scalar('validset/scores',score,self.iter)
-        self.writer.add_scalar('validset/loss', loss, self.iter)
+        # self.writer.add_scalar('validset/loss', loss, self.iter)
         return score
 
     def save(self,path):
@@ -94,7 +103,7 @@ class get_model:
     def get_segment(self):
         y_pred = self.predict(self.val_images)
         for y_p,filename in zip(y_pred,self.valfiles):
-            get_total_segment(y_p,filename)
+            get_total_segment(y_p,filename[:-4]+'.nii.gz')
 
 def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline'):
 
@@ -112,12 +121,13 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline')
         for samples_x,samples_y in loader:
             model.fit(samples_x,samples_y)
             cur_score = model.evaluate()
+            print(cur_score)
             if  best_score < cur_score:
                 best_score = cur_score
                 best_epoch = iter
                 model.save(MODEL_PATH+model_name+'.pkl')
                 print(best_score, best_epoch, '\n')
-            elif iter - best_epoch > 50:  # patience 为5
+            elif iter - best_epoch > 500:  # patience 为5
                 model.load(MODEL_PATH+model_name+'.pkl')
 
                 model.writer.close()
@@ -139,7 +149,34 @@ def main(use_gpu=True):
 
         model = get_model(valfiles=validset,use_gpu=use_gpu)
 
-        train_model(model,trainset,batchsize=1)
+
+        train_model(model,trainset,batchsize=2)
+        model.load(MODEL_PATH+'baseline.pkl')
+        model.get_segment()
         break
 if __name__=='__main__':
     main(True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

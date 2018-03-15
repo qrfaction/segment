@@ -64,29 +64,27 @@ class Unet(nn.Module):
         super(Unet, self).__init__()
 
         if True:   # encoder block
-            self.conv0 = block_warp('conv',1,16,(80,92,100),(80,92,100))
+            self.conv0 = block_warp('conv',1,32,(80,92,40),(80,92,40))
 
             self.maxpool1 = nn.MaxPool3d(kernel_size=2, stride=2, padding=0)   # 128 128 83
-            self.conv1 = block_warp('conv',16,32,(40,46,50),(40,46,50))
+            self.conv1 = block_warp('conv',32,64,(40,46,20),(40,46,20))
 
             self.maxpool2 = nn.MaxPool3d(kernel_size=2, stride=2, padding=0)   # 64 64 42
-            self.conv2 = block_warp('conv',32,64,(20,23,25),(20,23,25))
+            self.conv2 = block_warp('conv',64,128,(20,23,10),(20,23,10))
 
 
         if True:  # decoder block
-            self.deconv6 = block_warp('deconv',32,16,(40,46,50),(80,92,100))
-            self.conv6 = block_warp('conv',16+16,16, (80,92,100), (80,92,100))
+            self.deconv6 = block_warp('deconv',64,32,(40,46,20),(80,92,40))
+            self.conv6 = block_warp('conv',32+32,32, (80,92,40), (80,92,40))
 
-            self.deconv5 = block_warp('deconv',64,32, (20, 23,25), (40,46,50))
-            self.conv5 = block_warp('conv',32+32,32, (40, 46, 50), (40,46,50))
+            self.deconv5 = block_warp('deconv',128,64, (20, 23,20), (40,46,40))
+            self.conv5 = block_warp('conv',64+64,64, (40, 46, 40), (40,46,40))
 
-            # self.deconv4 = block_warp('deconv',512,256, (24,24, 20), (48, 48, 40))
-            # self.conv4 = block_warp('conv',256+256,256, (48, 48,40), (32,32, 40))
 
         self.out_layer = \
             nn.Sequential(
-                nn.Conv3d(16,3, kernel_size=1, stride=1),
-                nn.Softmax()    # batch  channel  w d h
+                nn.Conv3d(32,1, kernel_size=1, stride=1),
+                nn.Sigmoid()    # batch  channel  w d h
             )
 
     def forward(self, x):
@@ -103,7 +101,6 @@ class Unet(nn.Module):
         deconv6 = self.conv6(deconv6)                 # 192,192,160 64
 
         output = self.out_layer(deconv6)              # 192,192,160  3
-        output = output.squeeze()
         return output
 
 
@@ -125,24 +122,46 @@ class focalloss(nn.Module):
 class celoss(nn.Module):
     def __init__(self):
         super(celoss, self).__init__()
+        self.alpha = 2
     def forward(self,y_pred,y_true):
-        loss = y_true * y_pred.log()
-        loss = -loss.mean()
+        pos = y_pred
+        neg = 1-y_pred
+        weight2 = torch.pow(pos, self.alpha)
+        weight1 = torch.pow(neg, self.alpha)
+        loss = y_true * torch.log(pos) *weight1  + (1-y_true)*torch.log(neg) *weight2
+        loss = -torch.mean(loss)
         return  loss
 
 class diceloss(nn.Module):
-    def __init__(self,smooth):
+    def __init__(self,smooth=0):
         super(diceloss, self).__init__()
         self.smooth = smooth
     def forward(self,y_pred,y_true):
-        loss = -(torch.sum(y_pred*y_true)
-                   +self.smooth)/(torch.sum(y_true)+torch.sum(y_pred)+self.smooth)
-        return  loss
+        batch_size = y_true.size(0)
+        loss = 0
+        for i in range(batch_size):
+            loss += -(2.0*torch.sum(y_pred[i]*y_true[i]+self.smooth))/(
+                                  torch.sum(y_pred[i]) + torch.sum(y_true[i])+self.smooth)
+
+        return  loss/batch_size
 
 def dice_metric(y_pred,y):
     score = 0
     for i,j in zip(y_pred,y):
-        score +=2*np.sum(i*j)/(np.sum(i)+np.sum(j))
+        # a = i.argmax(axis=0)
+        # b = j.argmax(axis=0)
+        # print(a.shape,b.shape)
+        # a = np.float64(a>0)
+        # b = np.float64(b>0)
+        # x1 = np.sum(a*b)
+        # x2 = np.sum(a)
+        # x3 = np.sum(b)
+        # score += 2*x1/(x2+x3)
+        i = np.around(i)
+        # i[i>0.1] = 1
+        # i[i<=0.1] = 0
+        score += 2*np.sum(i*j)/(np.sum(i)+np.sum(j))
+        # print(i.shape)
     score = score/len(y)
     return score
 
