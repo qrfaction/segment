@@ -100,10 +100,10 @@ class get_model:
     def load(self,path):
         self.basenet.load_state_dict(torch.load(path))
 
-    def get_segment(self):
-        y_pred = self.predict(self.val_images)
-        for y_p,filename in zip(y_pred,self.valfiles):
-            get_total_segment(y_p,filename[:-4]+'.nii.gz')
+    # def get_segment(self):
+    #     y_pred = self.predict(self.val_images)
+    #     for y_p,filename in zip(y_pred,self.valfiles):
+    #         get_total_segment(y_p,filename[:-4]+'.nii.gz')
 
 def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline'):
 

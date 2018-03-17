@@ -1,6 +1,6 @@
 from tool import get_files
 from nipy import load_image
-from setting import LABEL_PATH,IMAGE_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH
+from setting import LABEL_PATH,IMAGE_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH,INFO
 from tqdm import tqdm
 import json
 import multiprocessing as mlp
@@ -242,8 +242,70 @@ def EDA_warp():
             images.append(PRE_IMAGE_PATH + files[i])
     EDA(labels, images, '192')
 
+def get_images_info():
+
+    def get_info(image,label):
+
+        def fune_range(info,target,value):
+            for i,t in enumerate(['x','y','z','voxel']):
+                if value[i]<info[target+'_'+t][0]:
+                    info[target + '_' + t][0] = value[i]
+
+                if value[i]>info[target+'_'+t][1]:
+                    info[target + '_' + t][1] = value[i]
+            return info
+        info = {
+            'brain_x': [256,0],
+            'brain_y': [256,0],
+            'brain_z': [256,0],
+            'brain_voxel': [10000,-10000],
+            'h1_x': [256,0],
+            'h1_y': [256,0],
+            'h1_z': [256,0],
+            'h1_voxel': [10000, -10000],
+            'h2_x': [256, 0],
+            'h2_y': [256, 0],
+            'h2_z': [256, 0],
+            'h2_voxel': [10000, -10000],
+        }
+        shape = image.shape
+        if shape == (256,256,166,1):
+            info['shape'] = 166
+        if shape == (256,256,180,1):
+            info['shape'] = 180
+        if shape == (192,192,160,1):
+            info['shape'] = 160
+
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                for k in range(shape[2]):
+                    value = (i,j,k,image[i,j,k,0])
+                    if label[i,j,k,0] == 1:
+                        info = fune_range(info,'h1',value)
+                    elif label[i,j,k,0] == 2:
+                        info = fune_range(info, 'h2', value)
+                    elif image[i,j,k,0] != -1:
+                        info = fune_range(info, 'brain', value)
+        return info
+
+    images_info = {}
+    files = get_files(PRE_IMAGE_PATH, prefix=False)
+
+    image_files = [PRE_IMAGE_PATH+f for f in files]
+    label_files = [PRE_LABEL_PATH+f for f in files]
+
+    for l_f, im_f ,name in tqdm(zip(label_files, image_files,files)):
+        label, image = load_image(l_f).get_data(), load_image(im_f).get_data()
+        images_info[name] = get_info(image,label)
+
+    with open(INFO+'image_info.json','w') as f:
+        f.write(json.dumps(images_info,indent=4, separators=(',', ': ')))
+
+    
+
+
 if __name__=='__main__':
-    EDA_warp()
+    get_images_info()
 
 
 
