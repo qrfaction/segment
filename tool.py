@@ -1,11 +1,12 @@
 from nipy.io.api import save_image,load_image
 from nipy.core.api import Image, AffineTransform
-from setting import LABEL_PATH,IMAGE_PATH,INFO,OUTPUT,PRE_LABEL_PATH
+from setting import LABEL_PATH,IMAGE_PATH,INFO,OUTPUT,PRE_LABEL_PATH,INFO
 import torch
 from torch.utils.data import Dataset
 import numpy as np
 import json
 from model import dice_metric
+
 def get_files(path,prefix = True):
     import os
     files = os.listdir(path)   #一对label和image文件同名
@@ -29,6 +30,10 @@ class Generator(Dataset):
     def __init__(self,files):
         self.images = np.array([IMAGE_PATH + f for f in files])
         self.labels = np.array([LABEL_PATH + f for f in files])
+        self.filename = files
+        with open(INFO + 'image_info.json', 'r') as f:
+            self.im_info = json.loads(f.read())
+
         self.length = len(files)
 
     def __getitem__(self, index):  # 返回的是tensor
@@ -38,28 +43,144 @@ class Generator(Dataset):
 
     def __len__(self):
         return self.length
+    
+    
+    def Gs_noise(self,noise_num=5):
+        images = images + torch.randn(images.shape) * num
+    
+    #dimensional=1,S-I
+    #dimensional=2,A-P
+    #dimensional=3,R-L
+    def randon_crop(self,dimensional=1):
+        random_num=np.random.randint(1,images.shape[dimensional]-2)
+        if dimensional==1:
+            return images[:,random_num-1:random_num+2,:,:]
+        if dimensional==2:
+            return images[:,:,random_num-1:random_num+2,:]
+        if dimensional==3:
+            return images[:,:,:,random_num-1:random_num+2]
 
-def recovery_segment(y_pred,filename,shape):
+            
 
-    y_pred = y_pred.around()
+def get_total_segment(y_pred,filename):
+    # print(y_pred)
+    # print(y_pred.shape)
+    label = load_image(PRE_LABEL_PATH + filename)
+    # L = np.transpose(L,(3,0,1,2))
 
-    if shape == '160':
+    # val_labels = LABEL_PATH + filename[:-7] + '.npy'
+    # ll = np.load(val_labels)
+    y_pred = y_pred.argmax(axis=0)
+
+    # x1 = np.sum(label[:, :, :] == 1)
+    # x2 = np.sum(label[:, :, :] == 2)
+    # print('label',x1+x2,x1,x2)
+
+    # y_pred = y_pred.argmax(axis=0)     # (x,y,z)
+    #
+    # y_pred = np.expand_dims(y_pred,axis=3)  #(x,y,z,1)
+    # y1 = np.sum(y_pred[:, :, :] == 1)
+    # y2 = np.sum(y_pred[:, :, :] == 2)
+    # print('y_pred', y1 + y2,y1,y2)
+
+    # x1 = label>0
+    # x2 = y_pred>0
+
+
+    with open(INFO+'shape.json','r') as f:
+        shape_info = json.loads(f.read())
+    if shape_info[filename] == '160':
+        # print(np.sum(x1[60:140, 60:152, 30:130] * x2)/(x1.sum()+x2.sum()))
+        # print(np.sum(label[60:140, 60:152, 30:130,0]==ll))
         segment = np.zeros((192,192,160,1))
         segment[60:140, 60:152, 30:130,0] = y_pred
-    elif shape == '166':
+    elif shape_info[filename] == '166':
+        # print(np.sum(x1[90:170, 95:187, 30:130] * x2) / (x1.sum() + x2.sum()))
+        # print(np.sum(label[90:170, 95:187, 30:130,0] == ll))
         segment = np.zeros((256,256, 166, 1))
         segment[90:170, 95:187, 30:130,0] = y_pred
-    elif shape == '180':
+    elif shape_info[filename] == '180':
+        # print(np.sum(x1[100:180, 100:192, 40:140] * x2) / (x1.sum() + x2.sum()))
+        # print(np.sum(label[100:180, 100:192, 40:140,0] == ll))
         segment = np.zeros((256,256,180, 1))
         segment[100:180, 100:192, 40:140,0] = y_pred
     else:
         raise ValueError('shape error')
 
-    label = load_image(PRE_LABEL_PATH + filename)
+
+# =============================================================================
+# 把一个三维array的size转为(1,256,256,160)
+# =============================================================================
+
+def size_exchange(array):
+    array1=[]
+    array2=[]
+    if array.shape == (1,192,192,160):
+        for i in range(array.shape[3]):
+            slices = PIL.Image.fromarray(array[0,:,:,i])
+            slicesx = slices.resize((256,256),PIL.Image.AFFINE)
+            slicesxx = np.asarray(slicesx) 
+            array1.append(slicesxx)
+
+        array1 = np.stack(array1)
+        array1 = np.transpose(array1,(1,2,0))
+        array1 = array1[np.newaxis,:,:,:]
+        
+        for i in range(array1.shape[1]):
+            slices = PIL.Image.fromarray(array1[0,i,:,:])
+            slicesx = slices.resize((212,256),PIL.Image.AFFINE)
+            slicesxx = np.asarray(slicesx) 
+            array2.append(slicesxx)
+            
+        array2 = np.stack(array2)
+        array2 = array2[np.newaxis,:,:,:]
+        
+    else:
+        print ('shibai')
+#    return data
+    return array2[:,:,:,26:186]
+
+
+
+
+    # print(segment.sum())
+    # print(y_pred.sum())
+    # print(label.get_data().sum(),'\n')
+    print(segment.sum(),filename)
     img = Image(segment,label.coordmap)
     save_image(img,OUTPUT+filename)
 
 
+# =============================================================================
+# 把一个三维array的size(1,192,192,160)转为(1,256,256,180)
+# =============================================================================
+def size_exchange(array):
+    array1=[]
+    array2=[]
+    if array.shape == (1,192,192,160):
+        for i in range(array.shape[3]):
+            slices = PIL.Image.fromarray(array[0,:,:,i])
+            slicesx = slices.resize((256,256),PIL.Image.AFFINE)
+            slicesxx = np.asarray(slicesx) 
+            array1.append(slicesxx)
+
+        array1 = np.stack(array1)
+        array1 = np.transpose(array1,(1,2,0))
+        array1 = array1[np.newaxis,:,:,:]
+        
+        for i in range(array1.shape[1]):
+            slices = PIL.Image.fromarray(array1[0,i,:,:])
+            slicesx = slices.resize((212,256),PIL.Image.AFFINE)
+            slicesxx = np.asarray(slicesx) 
+            array2.append(slicesxx)
+            
+        array2 = np.stack(array2)
+        array2 = array2[np.newaxis,:,:,:]
+        
+    else:
+        print ('shibai')
+#    return data
+    return array2[:,:,:,26:186]
 
 
 

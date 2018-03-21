@@ -4,7 +4,7 @@ from setting import LABEL_PATH,IMAGE_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH,INFO
 from tqdm import tqdm
 import json
 import multiprocessing as mlp
-
+import numpy as np
 
 def image_anaylizer(images,labels):
     pos = {
@@ -268,18 +268,13 @@ def get_images_info():
             'h2_z': [256, 0],
             'h2_voxel': [10000, -10000],
         }
+        info['shape'] = image.shape
         shape = image.shape
-        if shape == (256,256,166,1):
-            info['shape'] = 166
-        if shape == (256,256,180,1):
-            info['shape'] = 180
-        if shape == (192,192,160,1):
-            info['shape'] = 160
 
         for i in range(shape[0]):
             for j in range(shape[1]):
                 for k in range(shape[2]):
-                    value = (i,j,k,image[i,j,k,0])
+                    value = (i,j,k,int(image[i,j,k,0]))
                     if label[i,j,k,0] == 1:
                         info = fune_range(info,'h1',value)
                     elif label[i,j,k,0] == 2:
@@ -298,15 +293,94 @@ def get_images_info():
         label, image = load_image(l_f).get_data(), load_image(im_f).get_data()
         images_info[name] = get_info(image,label)
 
+    variables = [
+        'brain_x',
+        'brain_y',
+        'brain_z',
+        'brain_voxel',
+        'h1_x',
+        'h1_y',
+        'h1_z',
+        'h1_voxel',
+        'h2_x',
+        'h2_y',
+        'h2_z',
+        'h2_voxel',
+    ]
+    for file in images_info.keys():
+        for vari in variables:
+            images_info[file][vari+'_range'] = \
+                images_info[file][vari][1] - images_info[file][vari][0]
+    for file in images_info.keys():
+        images_info[file]['h_z_range'] = \
+            images_info[file]['h2_z'][1] - images_info[file]['h1_z'][0]
+
+
+    for file in images_info.keys():
+        for axis in ['x','y','z']:
+            for h in ['h1_','h2_']:
+                images_info[file]['effec_'+h+axis] = [0,0]
+                images_info[file]['effec_'+h+axis][0] = images_info[file][h+axis][0]-images_info[file]['brain_'+axis][0]
+                images_info[file]['effec_'+h+axis][1] = images_info[file][h+axis][1]-images_info[file]['brain_'+axis][0]
+
     with open(INFO+'image_info.json','w') as f:
         f.write(json.dumps(images_info,indent=4, separators=(',', ': ')))
 
-    
+def get_range(images_info):
+    variables = ['h1_voxel','h2_voxel']
 
+    for vari in variables:
+        low_bundary = []
+        high_bundary = []
+        max_bundary = []
+        for file in tqdm(images_info.keys()):
+            info = images_info[file]
+            image = load_image(PRE_IMAGE_PATH+file).get_data()
+            image = np.log(image[image>=0]+1)
+
+            # q3 = np.percentile(image,75)
+            # q1 = np.percentile(image,25)
+            # voxel_max = q3+2*(q3-q1)
+            # voxel_min = 0
+            voxel_mean = image.mean()
+            voxel_std = image.std()
+            voxel_max = voxel_mean + 3.5 * voxel_std
+            voxel_min = voxel_mean - 3.5 * voxel_std
+            voxel_range = voxel_max-voxel_min
+
+            low = np.log(info[vari][0]+1) - voxel_min
+            low_bundary.append(low/voxel_range)
+            high = np.log(info[vari][1]+1) - voxel_min
+            high_bundary.append(high/voxel_range)
+
+
+
+        low_bundary = sorted(low_bundary)
+        high_bundary = sorted(high_bundary)
+        print(low_bundary)
+        print(high_bundary)
+
+def test():
+    with open(INFO+'image_info.json','r') as f:
+        info = json.loads(f.read())
+
+    value_range = []
+    for file in info.keys():
+        if info[file]["shape"]!=180:
+            continue
+        value_range.append(info[file]['effec_h1_y'][0])
+    value_range = sorted(value_range)
+    print(value_range)
+
+    # with open(INFO+'image_info.json','w') as f:
+    #     f.write(json.dumps(info,indent=4, separators=(',', ': ')))
 
 if __name__=='__main__':
-    get_images_info()
-
+    # test()
+    # with open(INFO+'image_info.json','r') as f:
+    #     info = json.loads(f.read())
+    # get_range(info)
+    test()
 
 
 
