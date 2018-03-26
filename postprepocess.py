@@ -15,3 +15,12 @@ def average(results,weights=None):
     return y_pred
 
 
+def boost():
+
+    pass
+
+
+def threshold_filter(image,y_pred):
+    region = image[image>0.75]
+    y_pred[region] = 0
+    return y_pred

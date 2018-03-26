@@ -25,9 +25,6 @@ def prepocess():
     images = get_files(PRE_IMAGE_PATH)
     labels = get_files(PRE_LABEL_PATH)
     files = get_files(PRE_IMAGE_PATH,prefix=False)
-    with open(INFO+'image_info.json','r') as f:
-        info = json.loads(f.read())
-
     def normlize_data(image):
         vaild_area = (image >= 0)
         invaild_area = (image < 0)

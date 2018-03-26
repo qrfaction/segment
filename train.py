@@ -1,6 +1,5 @@
 from model import get_model,dice_metric
-import torch
-from tool import get_batch_images,get_files,Generator_3d
+from tool import get_batch_images,get_files,Generator_3d,deal_label,inference
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
 
@@ -9,13 +8,17 @@ from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_
 
 class segment_model:
 
-    def __init__(self,valfiles,modelname='Unet'):
+    def __init__(self,valfiles,modelname='Unet',axis = None):
 
         self.basenet = get_model(modelname=modelname)
 
 
         self.valfiles = valfiles
         self.get_valset()
+
+        self.modelname = modelname
+        self.axis = axis
+
 
     def get_valset(self):
         val_images = [IMAGE_PATH + f for f in self.valfiles]
@@ -34,8 +37,16 @@ class segment_model:
         return self.basenet.predict(X,batch_size=1)
 
     def evaluate(self):
-        y_pred = self.predict(self.val_images)
-        score = dice_metric(y_pred,self.val_labels)
+        y_pred = []
+        y = []
+        for label,image in zip(self.val_labels,self.val_images):
+            h1,h2 = inference(self.basenet,self.modelname,image,self.axis)
+            h1_label,h2_label = deal_label(self.modelname,label,self.axis)
+            y_pred.append(h1)
+            y.append(h1_label)
+            y_pred.append(h2)
+            y.append(h2_label)
+        score = dice_metric(y_pred,y)
         print(score)
         return score
 

@@ -71,13 +71,6 @@ def get_model(modelname,axis=None):
             x = Input((80,80,3))
         else:
             raise ValueError("deeplabv3+ axis error")
-        #
-        # encoder = block_warp('time_conv', x, 64)
-        # encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
-        # encoder = ConvLSTM2D(filters=128, padding='same', return_sequences=True)(encoder)
-        # encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
-        # decoder = block_warp('deconv', encoder, 64)
-        # output = TimeDistributed(Conv2D(filters=1, kernel_size=3, activation='sigmoid'))(decoder)
         pass
     else:
         raise ValueError("don't write this model")

@@ -21,7 +21,7 @@ def get_image(f):
 def get_batch_images(files):
     return [get_image(f) for f in files]
 
-def swap_axis(image,task,axis,recovery=False):
+def swap_axis(image,task,axis):
     if task == 'slice':
         if axis == 'x':
             return image.transpose((2,1,0))
@@ -330,8 +330,41 @@ def seg_recovery(y_pred,filename):
     img = Image(segment,label.coordmap)
     save_image(img,OUTPUT+filename)
 
-def inference(model,modelname,image,axis=None):
+def deal_label(modelname,label,axis=None):
+    if modelname == 'slice':
+        assert axis is not None
+        if axis == 'x':
+            size = label.shape[0]
+        elif axis == 'y':
+            size = label.shape[1]
+        elif axis == 'z':
+            size = label.shape[2]
+        else:
+            raise ValueError('3d generator flip error')
+        h1 = []
+        h2 = []
+        for i in range(size):
+            slice_h1 = crop_2d_slice(label,1,axis,i)
+            slice_h2 = crop_2d_slice(label,2,axis,i)
+            slice_h1 = swap_axis(slice_h1,'slice',axis)
+            slice_h2 = swap_axis(slice_h2,'slice',axis)
+            h1.append(slice_h1)
+            h2.append(slice_h2)
+    elif modelname == 'convlstm':
+        assert axis is not None
+        h1 = crop_3d(label,1)
+        h2 = crop_3d(label,1)
+        h1 = swap_axis(h1,'convlstm',axis)
+        h2 = swap_axis(h2,'convlstm', axis)
+    elif modelname == 'unet':
+        h1 = crop_3d(label, 1)
+        h2 = crop_3d(label, 1)
+        print(h1.shape)
+    else:
+        raise ValueError("don't have this model")
+    return h1,h2
 
+def inference(model,modelname,image,axis=None):
     if modelname == 'slice':
         assert axis is not None
         if axis == 'x':
@@ -354,11 +387,28 @@ def inference(model,modelname,image,axis=None):
 
         y_pred_h1 = model.predict(seq_slice_h1)
         y_pred_h2 = model.predict(seq_slice_h2)
-        seq_slice_h1 = []
-        seq_slice_h2 = []
+        h1 = []
+        h2 = []
         for i in range(size):
-            pass
-
-
+            h1.append(swap_axis(y_pred_h1[i],'slice',axis))
+            h2.append(swap_axis(y_pred_h2[i],'slice',axis))
+    elif modelname == 'convlstm':
+        assert axis is not None
+        h1 = crop_3d(image,1)
+        h2 = crop_3d(image,1)
+        h1 = swap_axis(h1,'convlstm',axis)
+        h2 = swap_axis(h2,'convlstm', axis)
+        h1 = model.predict([h1])[0]
+        h2 = model.predict([h2])[0]
+        print(h1.shape)
+    elif modelname == 'unet':
+        h1 = crop_3d(image, 1)
+        h2 = crop_3d(image, 1)
+        h1 = model.predict([h1])[0]
+        h2 = model.predict([h2])[0]
+        print(h1.shape)
+    else:
+        raise ValueError("don't have this model")
+    return np.array(h1),np.array(h2)
 
 
