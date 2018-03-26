@@ -1,8 +1,7 @@
 from nipy.io.api import save_image,load_image
 from nipy.core.api import Image, AffineTransform
-from setting import LABEL_PATH,IMAGE_PATH,INFO,OUTPUT,PRE_LABEL_PATH,INFO,crop_setting
+from setting import LABEL_PATH,IMAGE_PATH,WINDOW,OUTPUT,PRE_LABEL_PATH,INFO,crop_setting
 import torch
-from torch.utils.data import Dataset
 import numpy as np
 import json
 from random import randint,choice
@@ -20,7 +19,31 @@ def get_image(f):
     return np.load(f)
 
 def get_batch_images(files):
-    return [get_image(f).tolist() for f in files]
+    return [get_image(f) for f in files]
+
+def swap_axis(image,task,axis,recovery=False):
+    if task == 'slice':
+        if axis == 'x':
+            return image.transpose((2,1,0))
+        elif axis == 'y':
+            return image.transpose((0,2,1))
+        elif axis == 'z':
+            return image
+        else:
+            raise ValueError("swapaxis error  task slice")
+    elif task == 'convlstm':
+        if axis == 'x':
+            return image
+        elif axis == 'y':
+            return image.transpose((1, 0, 2, 3))
+        elif axis == 'z':
+            return image.transpose((2, 1, 0, 3))
+        else:
+            raise ValueError("swapaxis error  task convlstm")
+    else:
+        raise ValueError("don't have this task")
+
+
 
 def crop_3d(image,id_h,area=None):
     """
@@ -44,7 +67,7 @@ def crop_3d(image,id_h,area=None):
                 area[z][0]:area[z][1]
             ]
 
-def crop_2d_slice(image,id_h,axis,shift,window=5,area=None):
+def crop_2d_slice(image,id_h,axis,shift,window=WINDOW,area=None):
     window = window//2
     if area is None:
         area = crop_setting['2d'+str(image.shape[2])]
@@ -66,12 +89,12 @@ def crop_2d_slice(image,id_h,axis,shift,window=5,area=None):
             area['x'][0]:area['x'][1],
             area['y'][0]:area['y'][1],
             area[z][0] + shift - window : area[z][0] + shift + window + 1,
-                ]
+        ]
     else:
         raise ValueError('crop_2d axis error')
 
-class Generator_3d(Dataset):
-    def __init__(self,files):
+class Generator_3d:
+    def __init__(self,files,batchsize):
         self.images = []
         self.labels = []
         for i in [1,2]:
@@ -79,9 +102,14 @@ class Generator_3d(Dataset):
                 self.images.append((IMAGE_PATH+f,i))
                 self.labels.append((LABEL_PATH+f,i))
 
-        self.length = len(self.images)
+        self.batchsize = batchsize
+        self.begin = 0
+        self.end = self.batchsize
+        self.index = list(range(0, len(self.images)))
+        np.random.shuffle(self.index)
 
-    def __getitem__(self, index):  # 返回的是tensor
+
+    def getitem(self, index):  # 返回的是tensor
         image_file,h_id = self.images[index]
         label_file,h_id = self.labels[index]
         image = get_image(image_file)
@@ -89,18 +117,31 @@ class Generator_3d(Dataset):
         data = np.concatenate([image,label],axis=-1)
         assert data.shape == (80,80,40,2)
         data = self.process(data,h_id)
-        image = data[:1]
-        label = data[1:]
-        return torch.FloatTensor(image),torch.FloatTensor(label)
+        image = data[:, :, :, :1]
+        label = data[:, :, :, 1:]
+        return image,label
 
     def process(self,image,h_id):
         image = crop_3d(image,h_id)
         image = self.flip(image)
-        image = image.transpose((3,0,1,2))
         return image
 
-    def __len__(self):
-        return self.length
+    def get_batch_data(self):
+        batch_image = []
+        batch_label = []
+        for i in self.index[self.begin:self.end]:
+            image,label = self.getitem(i)
+            batch_image.append(image)
+            batch_label.append(label)
+
+        self.begin = self.end
+        self.end += self.batchsize
+        if self.end > len(self.labels):
+            np.random.shuffle(self.index)
+            self.begin = 0
+            self.end = self.batchsize
+
+        return batch_image,batch_label
 
     def flip(self,image):
         axis = randint(0, 2)
@@ -114,11 +155,76 @@ class Generator_3d(Dataset):
             raise ValueError('3d generator flip error')
         return image
 
-    def Gs_noise(self,image,noise_num=5):
-        image = image + torch.randn(image.shape) * noise_num
+class Generator_convlstm:
+    def __init__(self,files,axis,batchsize):
+        self.images = []
+        self.labels = []
+        for i in [1,2]:
+            for f in files:
+                self.images.append((IMAGE_PATH+f,i))
+                self.labels.append((LABEL_PATH+f,i))
 
-class Generator_2d_slice(Dataset):
-    def __init__(self, files,axis):
+
+        self.axis = axis
+
+        self.batchsize = batchsize
+        self.begin = 0
+        self.end = self.batchsize
+        self.index = list(range(0, len(self.images)))
+        np.random.shuffle(self.index)
+
+
+    def getitem(self, index):  # 返回的是tensor
+        image_file,h_id = self.images[index]
+        label_file,h_id = self.labels[index]
+        image = get_image(image_file)
+        label = get_image(label_file)
+        data = np.concatenate([image,label],axis=-1)
+        assert data.shape == (80,80,40,2)
+        data = self.process(data,h_id)
+        image = data[:,:,:,:1]
+        label = data[:,:,:,1:]
+        return image,label
+
+    def process(self,image,h_id):
+        image = crop_3d(image,h_id)
+        image = self.flip(image)
+        image = swap_axis(image,'convlstm',self.axis)
+        return image
+
+    def get_batch_data(self):
+        batch_image = []
+        batch_label = []
+        for i in self.index[self.begin:self.end]:
+            image,label = self.getitem(i)
+            batch_image.append(image)
+            batch_label.append(label)
+
+        self.begin = self.end
+        self.end += self.batchsize
+        if self.end > len(self.labels):
+            np.random.shuffle(self.index)
+            self.begin = 0
+            self.end = self.batchsize
+
+        return batch_image,batch_label
+
+
+
+    def flip(self,image):
+        axis = randint(0, 2)
+        if axis == 0:
+            image = image[::-1, :, :, :]
+        elif axis == 1:
+            image = image[:, ::-1, :, :]
+        elif axis == 2:
+            image = image[:, :, ::-1, :]
+        else:
+            raise ValueError('3d generator flip error')
+        return image
+
+class Generator_2d_slice:
+    def __init__(self, files,axis,batchsize):
         self.axis = axis
         if axis == 'x':
             size = crop_setting['2d166']['x'][1] - crop_setting['2d166']['x'][0]
@@ -139,27 +245,52 @@ class Generator_2d_slice(Dataset):
                     self.images.append((IMAGE_PATH+f,i,shift))
                     self.labels.append((LABEL_PATH+f,i,shift))
 
-        self.length = len(self.images)
 
-    def __getitem__(self, index):  # 返回的是tensor
+
+        self.batchsize = batchsize
+        self.begin = 0
+        self.end = self.batchsize
+        self.index = list(range(0, len(self.images)))
+        np.random.shuffle(self.index)
+
+    def getitem(self, index):  # 返回的是tensor
         image_file,h_id,shift = self.images[index]
         label_file,h_id,shift = self.labels[index]
         image = get_image(image_file)
         label = get_image(label_file)
         data = np.concatenate([image, label], axis=-1)
         data = self.process(data, h_id,shift)
-        image = data[0]
-        label = data[1]
-        return torch.FloatTensor(image),torch.FloatTensor(label)
+        image = data[:,:,:,0]
+        label = data[:,:,:,1]
+
+        postion = 1 + WINDOW // 2
+        label = label[:, :, postion:postion + 1]
+
+        return image,label
+
 
     def process(self, image, h_id,shift):
         image = crop_2d_slice(image,h_id,self.axis,shift)
         image = self.flip(image)
-        image = image.transpose((3, 0, 1, 2))
+        image = swap_axis(image,'slice',self.axis)
         return image
 
-    def __len__(self):
-        return self.length
+    def get_batch_data(self):
+        batch_image = []
+        batch_label = []
+        for i in self.index[self.begin:self.end]:
+            image,label = self.getitem(i)
+            batch_image.append(image)
+            batch_label.append(label)
+
+        self.begin = self.end
+        self.end += self.batchsize
+        if self.end > len(self.labels):
+            np.random.shuffle(self.index)
+            self.begin = 0
+            self.end = self.batchsize
+
+        return batch_image,batch_label
 
     def flip(self,image):
         axis = choice(self.flip_axis)
@@ -173,9 +304,7 @@ class Generator_2d_slice(Dataset):
             raise ValueError('3d generator flip error')
         return image
 
-
-
-def seg_recovery_3d(y_pred,filename):
+def seg_recovery(y_pred,filename):
     label = load_image(PRE_LABEL_PATH + filename)
     shape = label.get_data().shape
     segment = np.zeros(shape)
@@ -201,93 +330,34 @@ def seg_recovery_3d(y_pred,filename):
     img = Image(segment,label.coordmap)
     save_image(img,OUTPUT+filename)
 
+def inference(model,modelname,image,axis=None):
 
+    if modelname == 'slice':
+        assert axis is not None
+        if axis == 'x':
+            size = image.shape[0]
+        elif axis == 'y':
+            size = image.shape[1]
+        elif axis == 'z':
+            size = image.shape[2]
+        else:
+            raise ValueError('3d generator flip error')
+        seq_slice_h1 = []
+        seq_slice_h2 = []
+        for i in range(size):
+            slice_h1 = crop_2d_slice(image,1,axis,i)
+            slice_h2 = crop_2d_slice(image,2,axis,i)
+            slice_h1 = swap_axis(slice_h1,'slice',axis)
+            slice_h2 = swap_axis(slice_h2,'slice',axis)
+            seq_slice_h1.append(slice_h1)
+            seq_slice_h2.append(slice_h2)
 
-
-def size_exchange(array):
-    array1=[]
-    array2=[]
-    if array.shape == (1,192,192,160):
-        for i in range(array.shape[3]):
-            slices = PIL.Image.fromarray(array[0,:,:,i])
-            slicesx = slices.resize((256,256),PIL.Image.AFFINE)
-            slicesxx = np.asarray(slicesx) 
-            array1.append(slicesxx)
-
-        array1 = np.stack(array1)
-        array1 = np.transpose(array1,(1,2,0))
-        array1 = array1[np.newaxis,:,:,:]
-        
-        for i in range(array1.shape[1]):
-            slices = PIL.Image.fromarray(array1[0,i,:,:])
-            slicesx = slices.resize((212,256),PIL.Image.AFFINE)
-            slicesxx = np.asarray(slicesx) 
-            array2.append(slicesxx)
-            
-        array2 = np.stack(array2)
-        array2 = array2[np.newaxis,:,:,:]
-        
-    else:
-        print ('shibai')
-#    return data
-    return array2[:,:,:,26:186]
-
-
-
-
-    # print(segment.sum())
-    # print(y_pred.sum())
-    # print(label.get_data().sum(),'\n')
-    print(segment.sum(),filename)
-    img = Image(segment,label.coordmap)
-    save_image(img,OUTPUT+filename)
-
-
-# =============================================================================
-# 把一个三维array的size(1,192,192,160)转为(1,256,256,180)
-# =============================================================================
-def size_exchange(array):
-    array1=[]
-    array2=[]
-    if array.shape == (1,192,192,160):
-        for i in range(array.shape[3]):
-            slices = PIL.Image.fromarray(array[0,:,:,i])
-            slicesx = slices.resize((256,256),PIL.Image.AFFINE)
-            slicesxx = np.asarray(slicesx) 
-            array1.append(slicesxx)
-
-        array1 = np.stack(array1)
-        array1 = np.transpose(array1,(1,2,0))
-        array1 = array1[np.newaxis,:,:,:]
-        
-        for i in range(array1.shape[1]):
-            slices = PIL.Image.fromarray(array1[0,i,:,:])
-            slicesx = slices.resize((212,256),PIL.Image.AFFINE)
-            slicesxx = np.asarray(slicesx) 
-            array2.append(slicesxx)
-            
-        array2 = np.stack(array2)
-        array2 = array2[np.newaxis,:,:,:]
-        
-    else:
-        print ('shibai')
-#    return data
-    return array2[:,:,:,26:186]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+        y_pred_h1 = model.predict(seq_slice_h1)
+        y_pred_h2 = model.predict(seq_slice_h2)
+        seq_slice_h1 = []
+        seq_slice_h2 = []
+        for i in range(size):
+            pass
 
 
 

@@ -1,167 +1,117 @@
-import torch
-import torch.nn as nn
 import numpy as np
+from keras import backend as K
+from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool3D
+from keras.layers import PReLU,concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D
+from keras.models import Model
+from keras.optimizers import Nadam
 
 
-# 图像       (256, 256, 166, 1)
-# 标签为 0  -1
-
-
-def calcu_padding(in_size,out_size,deconv=False,stride =np.array([2,2,2]) ,
-                  kernel_size = np.array([3,3,3]),dialation = np.array([1,1,1])):
-    "计算补0数量 "
-    if deconv:
-        #这里默认output_padding = 1
-        return (kernel_size + stride*(in_size - 1) - out_size + 1 )//2
-    else:
-        #  这里默认步长为1
-        return (dialation*(kernel_size-1) + out_size - in_size)//2
-
-def block_warp(block_name,in_dim,out_dim,in_size,out_size,kernel_size=np.array([3,3,3])):
-    in_size = np.array(in_size)
-    out_size = np.array(out_size)
+def block_warp(block_name,input_layer,filters):
     if block_name == 'conv':
-        padding1 = calcu_padding(
-            in_size = in_size,
-            out_size = out_size,
-            kernel_size = kernel_size,
-        )
-        padding2 = calcu_padding(
-            in_size=out_size,
-            out_size=out_size,
-            kernel_size=kernel_size,
-        )
-        padding1 = tuple(padding1.tolist())
-        padding2 = tuple(padding2.tolist())
-        return nn.Sequential(
-            nn.Conv3d(in_dim, out_dim, kernel_size=kernel_size.tolist(), stride=1, padding=padding1),
-            nn.BatchNorm3d(out_dim),
-            nn.LeakyReLU(0.1),
-            nn.Conv3d(out_dim, out_dim, kernel_size=kernel_size.tolist(), stride=1, padding=padding2),
-            nn.BatchNorm3d(out_dim),
-            nn.LeakyReLU(0.1),
-        )
+        y = Conv3D(filters=filters,kernel_size=3,padding='same')(input_layer)
+        y = BatchNormalization()(y)
+        y = PReLU()(y)
+        y = Conv3D(filters=filters,kernel_size=3,padding='same')(y)
+        y = BatchNormalization()(y)
+        y = PReLU()(y)
     elif block_name == 'deconv':
-        padding = calcu_padding(
-            in_size=in_size,
-            out_size=out_size,
-            kernel_size=kernel_size,
-            deconv=True,
-            stride=np.array([2,2,2]),
-
-        )
-        padding = tuple(padding.tolist())
-        return nn.Sequential(
-            nn.ConvTranspose3d(in_dim, out_dim, kernel_size=kernel_size.tolist(), stride=2, padding=padding,output_padding=1),
-            nn.LeakyReLU(0.1),
-        )
-
-
-
-class Unet(nn.Module):
-
-    def __init__(self):
-        super(Unet, self).__init__()
-
-        if True:   # encoder block
-            self.conv0 = block_warp('conv',1,32,(80,92,40),(80,92,40))
-
-            self.maxpool1 = nn.MaxPool3d(kernel_size=2, stride=2, padding=0)   # 128 128 83
-            self.conv1 = block_warp('conv',32,64,(40,46,20),(40,46,20))
-
-            self.maxpool2 = nn.MaxPool3d(kernel_size=2, stride=2, padding=0)   # 64 64 42
-            self.conv2 = block_warp('conv',64,128,(20,23,10),(20,23,10))
+        y = Conv3DTranspose(filters=filters,kernel_size=3,padding='same')(input_layer)
+        y = BatchNormalization()(y)
+        y = PReLU()(y)
+    elif block_name == 'time_conv':
+        y = TimeDistributed(Conv2D(filters=filters,kernel_size=3,padding='same'))(input_layer)
+        y = TimeDistributed(BatchNormalization())(y)
+        y = TimeDistributed(PReLU())(y)
+    elif block_name == 'time_deconv':
+        y = TimeDistributed(Conv2DTranspose(filters=filters,kernel_size=3,padding='same'))(input_layer)
+        y = TimeDistributed(BatchNormalization())(y)
+        y = TimeDistributed(PReLU())(y)
+    else:
+        raise ValueError("layer error")
+    return y
 
 
-        if True:  # decoder block
-            self.deconv6 = block_warp('deconv',64,32,(40,46,20),(80,92,40))
-            self.conv6 = block_warp('conv',32+32,32, (80,92,40), (80,92,40))
+def get_model(modelname,axis=None):
+    if modelname == 'Unet':
+        x = Input((80,80,40,1))
+        conv0 = block_warp('conv',x,32)
+        conv1 = block_warp('conv', MaxPool3D(padding='same',strides=2)(x), 64)
+        conv2 = block_warp('conv', MaxPool3D(padding='same',strides=2)(x), 128)
+        deconv1 = block_warp('deconv', conv2, 64)
+        deconv1 = block_warp('conv', concatenate([deconv1,conv1]),64)
+        deconv2 = block_warp('deconv', deconv1, 32)
+        deconv2 = block_warp('conv', concatenate([deconv2, conv0]), 32)
+        output = Conv3D(filters=1,kernel_size=3,activation='sigmoid')(deconv2)
 
-            self.deconv5 = block_warp('deconv',128,64, (20, 23,20), (40,46,40))
-            self.conv5 = block_warp('conv',64+64,64, (40, 46, 40), (40,46,40))
+    elif modelname == 'ConvLSTM':
+        assert axis is not None
+        if axis == 'x':                       # x y z
+            x = Input((80, 80, 40, 1))
+        elif axis == 'y':                     #  y x z
+            x = Input((80, 80, 40, 1))
+        elif axis == 'z':                    # z y x
+            x = Input((40, 80, 80, 1))
+        else:
+            raise ValueError("convlstm axis error")
 
+        encoder = block_warp('time_conv', x, 64)
+        encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
+        encoder = ConvLSTM2D(filters=128,padding='same',return_sequences=True)(encoder)
+        encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
+        decoder = block_warp('deconv', encoder, 64)
+        output = TimeDistributed(Conv2D(filters=1, kernel_size=3, activation='sigmoid'))(decoder)
 
-        self.out_layer = \
-            nn.Sequential(
-                nn.Conv3d(32,1, kernel_size=1, stride=1),
-                nn.Sigmoid()    # batch  channel  w d h
-            )
+    elif modelname == 'slice':
+        assert axis is not None
+        if axis == 'x':  #  y z  x
+            x = Input((80,40,3))
+        elif axis == 'y':  # x z y
+            x = Input((80,40,3))
+        elif axis == 'z':  # x y z
+            x = Input((80,80,3))
+        else:
+            raise ValueError("deeplabv3+ axis error")
+        #
+        # encoder = block_warp('time_conv', x, 64)
+        # encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
+        # encoder = ConvLSTM2D(filters=128, padding='same', return_sequences=True)(encoder)
+        # encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
+        # decoder = block_warp('deconv', encoder, 64)
+        # output = TimeDistributed(Conv2D(filters=1, kernel_size=3, activation='sigmoid'))(decoder)
+        pass
+    else:
+        raise ValueError("don't write this model")
 
-    def forward(self, x):
-        conv0 = self.conv0(x)
-        conv1 = self.conv1(self.maxpool1(conv0))
-        conv2 = self.conv2(self.maxpool2(conv1))
+    model = Model(inputs=[x],outputs=[output])
+    model.compile(optimizer=Nadam(lr=0.001),loss=diceLoss)
+    print(model.summary())
+    return model
 
-        deconv5 = self.deconv5(conv2)
-        deconv5 = torch.cat([deconv5, conv1], dim=1)
-        deconv5 = self.conv5(deconv5)
+def focalLoss(y_true,y_pred):
+    y_pred = K.batch_flatten(y_pred)
+    y_true = K.batch_flatten(y_true)
+    weight1 = K.pow(1 - y_pred, 1)
+    weight2 = K.pow(y_pred, 1)
+    loss = y_true * K.log(y_pred) * weight1 +\
+        (1 - y_true) * K.log(1 - y_pred) * weight2
 
-        deconv6 = self.deconv6(deconv5)
-        deconv6 = torch.cat([deconv6, conv0], dim=1)  # 192,192,160 128
-        deconv6 = self.conv6(deconv6)                 # 192,192,160 64
+    loss = -K.mean(loss,axis=-1) / 6
+    return loss
 
-        output = self.out_layer(deconv6)              # 192,192,160  3
-        return output
+def diceLoss(y_true, y_pred,smooth = 0):
+    y_pred = K.batch_flatten(y_pred)
+    y_true = K.batch_flatten(y_true)
+    intersection = K.batch_dot(y_true,y_pred)
+    loss =  (2. * intersection + smooth) / (K.sum(y_true,axis=1) + K.sum(y_pred,axis=1) + smooth)
+    print(K.sum(y_true,axis=1),intersection)
+    return K.mean(loss)
 
-
-
-class focalloss(nn.Module):
-    def __init__(self,alpha):
-        super(focalloss, self).__init__()
-        self.alpha = alpha
-    def forward(self,y_pred,y_true):
-        weight1 = torch.pow(1-y_pred,self.alpha)
-        weight2 = torch.pow(y_pred,self.alpha)
-        loss = (
-                    y_true * torch.log(y_pred) * weight1 +
-                    (1-y_true) * torch.log(1-y_pred) * weight2
-                )
-        loss = -torch.sum(loss)/(y_true.size()[0]*6)
-        return  loss
-
-class celoss(nn.Module):
-    def __init__(self):
-        super(celoss, self).__init__()
-        self.alpha = 2
-    def forward(self,y_pred,y_true):
-        pos = y_pred
-        neg = 1-y_pred
-        weight2 = torch.pow(pos, self.alpha)
-        weight1 = torch.pow(neg, self.alpha)
-        loss = y_true * torch.log(pos) *weight1  + (1-y_true)*torch.log(neg) *weight2
-        loss = -torch.mean(loss)
-        return  loss
-
-class diceloss(nn.Module):
-    def __init__(self,smooth=0):
-        super(diceloss, self).__init__()
-        self.smooth = smooth
-    def forward(self,y_pred,y_true):
-        batch_size = y_true.size(0)
-        loss = 0
-        for i in range(batch_size):
-            loss += -(2.0*torch.sum(y_pred[i]*y_true[i]+self.smooth))/(
-                                  torch.sum(y_pred[i]) + torch.sum(y_true[i])+self.smooth)
-
-        return  loss/batch_size
 
 def dice_metric(y_pred,y):
     score = 0
     for i,j in zip(y_pred,y):
-        # a = i.argmax(axis=0)
-        # b = j.argmax(axis=0)
-        # print(a.shape,b.shape)
-        # a = np.float64(a>0)
-        # b = np.float64(b>0)
-        # x1 = np.sum(a*b)
-        # x2 = np.sum(a)
-        # x3 = np.sum(b)
-        # score += 2*x1/(x2+x3)
         i = np.around(i)
-        # i[i>0.1] = 1
-        # i[i<=0.1] = 0
         score += 2*np.sum(i*j)/(np.sum(i)+np.sum(j))
-        # print(i.shape)
     score = score/len(y)
     return score
 

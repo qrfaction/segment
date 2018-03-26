@@ -1,46 +1,21 @@
-from model import Unet,focalloss,celoss,dice_metric,ce_loss,diceloss
-from Nadam import Nadam
-from torch import optim
-from tensorboardX import SummaryWriter
+from model import get_model,dice_metric
 import torch
-from tool import get_batch_images,Generator,get_files,get_total_segment
+from tool import get_batch_images,get_files,Generator_3d
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
-from torch import nn
-
-torch.backends.cudnn.enabled = False
 
 
-class get_model:
 
-    def __init__(self,valfiles,alpha = 3,loss = 'dice_metric',use_gpu=True):
 
-        self.basenet = Unet()
-        if use_gpu:
-            self.basenet.cuda()
+class segment_model:
 
-        print(self.basenet)
+    def __init__(self,valfiles,modelname='Unet'):
 
-        self.use_gpu = use_gpu
+        self.basenet = get_model(modelname=modelname)
 
-        self.writer = SummaryWriter(SUMMARY_PATH)
 
         self.valfiles = valfiles
         self.get_valset()
-
-        self.optimizer = Nadam(self.basenet.parameters(),lr=0.0002,schedule_decay=0.004)
-
-        self.basenet.train()
-
-        if loss == 'focalLoss':
-            self.loss_f = focalloss(alpha=alpha)
-        elif loss =='ceLoss':
-            self.loss_f = celoss()
-            # self.loss_f = nn.BCELoss()
-        elif loss=='dice_metric':
-            self.loss_f = diceloss()
-
-        self.iter = 0
 
     def get_valset(self):
         val_images = [IMAGE_PATH + f for f in self.valfiles]
@@ -53,86 +28,44 @@ class get_model:
         self.val_labels = np.array(labels)
 
     def fit(self,X,Y):
-        if self.use_gpu:
-            X = X.cuda()
-            Y = Y.cuda()
-        X = torch.autograd.Variable(X)
-        Y = torch.autograd.Variable(Y)
-        y_pred = self.basenet(X)
-        loss = self.loss_f(y_pred, Y)
-
-        self.iter+=1
-        self.writer.add_scalar('trainset/Loss',loss[0],self.iter)
-
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+        self.basenet.fit(X,Y,batch_size=2)
 
     def predict(self,X):
-        self.basenet.eval()
-        # X = get_batch_images(x_files)
-        if self.use_gpu:
-            X = X.cuda()
-        X = torch.autograd.Variable(X,volatile=True)
-        y_pred = self.basenet(X).data
-        self.basenet.train()
-        if self.use_gpu:
-            return y_pred.cpu().numpy()
-        return y_pred.numpy()
+        return self.basenet.predict(X,batch_size=1)
 
     def evaluate(self):
         y_pred = self.predict(self.val_images)
-
-        images = self.val_images.numpy()
-        for i,I in enumerate(images):
-            y_pred[i][I>=800] = 0
-            y_pred[i][I<=100] = 0
-
         score = dice_metric(y_pred,self.val_labels)
-        # loss = ce_loss(y_pred,self.val_labels)
-        self.writer.add_scalar('validset/scores',score,self.iter)
-        # self.writer.add_scalar('validset/loss', loss, self.iter)
+        print(score)
         return score
 
     def save(self,path):
-        torch.save(self.basenet.state_dict(),path)
+        self.basenet.save_weights(path)
 
     def load(self,path):
-        self.basenet.load_state_dict(torch.load(path))
-
-    # def get_segment(self):
-    #     y_pred = self.predict(self.val_images)
-    #     for y_p,filename in zip(y_pred,self.valfiles):
-    #         get_total_segment(y_p,filename[:-4]+'.nii.gz')
+        self.basenet.load_weights(path)
 
 def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline'):
 
-    dataset = Generator(train_files)
-    loader = torch.utils.data.DataLoader(
-        dataset=dataset,
-        batch_size=batchsize,
-        shuffle=True,
-        num_workers=2,
-    )
+    generator = Generator_3d(train_files,batchsize)
+
     iter = 1
     best_score = -1
     best_epoch = 1
     while True:
-        for samples_x,samples_y in loader:
-            model.fit(samples_x,samples_y)
-            cur_score = model.evaluate()
-            print(cur_score)
-            if  best_score < cur_score:
-                best_score = cur_score
-                best_epoch = iter
-                model.save(MODEL_PATH+model_name+'.pkl')
-                print(best_score, best_epoch, '\n')
-            elif iter - best_epoch > 500:  # patience 为5
-                model.load(MODEL_PATH+model_name+'.pkl')
+        samples_x,samples_y = generator.get_batch_data()
 
-                model.writer.close()
-                return best_score
-            iter += 1
+        model.fit(samples_x,samples_y)
+        cur_score = model.evaluate()
+        if  best_score < cur_score:
+            best_score = cur_score
+            best_epoch = iter
+            model.save(MODEL_PATH+model_name+'.h5')
+            print(best_score, best_epoch, '\n')
+        elif iter - best_epoch > 300:  # patience 为5
+            model.load(MODEL_PATH+model_name+'.h5')
+            return best_score
+        iter += 1
 
 
 def main(use_gpu=True):

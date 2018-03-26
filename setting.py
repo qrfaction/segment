@@ -10,6 +10,7 @@ MODEL_PATH = 'model/'
 OUTPUT = 'output/'
 INFO = 'img_info/'
 BATCHSIZE = 5
+WINDOW = 5
 K = 10   # 交叉验证
 
 
