@@ -26,6 +26,11 @@ def block_warp(block_name,input_layer,filters):
         y = TimeDistributed(Conv2DTranspose(filters=filters,kernel_size=3,padding='same'))(input_layer)
         y = TimeDistributed(BatchNormalization())(y)
         y = TimeDistributed(PReLU())(y)
+    elif block_name == 'inception':
+        # y = TimeDistributed(Conv2DTranspose(filters=filters,kernel_size=3,padding='same'))(input_layer)
+        # y = TimeDistributed(BatchNormalization())(y)
+        # y = TimeDistributed(PReLU())(y)s
+        pass
     else:
         raise ValueError("layer error")
     return y

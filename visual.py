@@ -5,6 +5,7 @@ from tqdm import tqdm
 import json
 import multiprocessing as mlp
 import numpy as np
+import SimpleITK as sitk
 
 def image_anaylizer(images,labels):
     pos = {
@@ -290,7 +291,12 @@ def get_images_info():
     label_files = [PRE_LABEL_PATH+f for f in files]
 
     for l_f, im_f ,name in tqdm(zip(label_files, image_files,files)):
-        label, image = load_image(l_f).get_data(), load_image(im_f).get_data()
+        # label, image = load_image(l_f).get_data(), load_image(im_f).get_data()
+        label,image = sitk.ReadImage(l_f) , sitk.ReadImage(im_f)
+        label,image = sitk.GetArrayFromImage(label),sitk.GetArrayFromImage(image)
+        label,image = label.transpose((1,2,0)),image.transpose((1,2,0))
+        label,image = label[:,:,:,np.newaxis],image[:,:,:,np.newaxis]
+
         images_info[name] = get_info(image,label)
 
     variables = [
@@ -361,26 +367,24 @@ def get_range(images_info):
         print(high_bundary)
 
 def test():
-    with open(INFO+'image_info.json','r') as f:
-        info = json.loads(f.read())
+    f ='atlas/ADNI_011_S_0861_MR_MPR__GradWarp__B1_Correction__N3__Scaled_Br_20070108234412094_S19476_I35513.nii.gz'
+    image = sitk.ReadImage(f)
 
-    value_range = []
-    for file in info.keys():
-        if info[file]["shape"]!=180:
-            continue
-        value_range.append(info[file]['effec_h1_y'][0])
-    value_range = sorted(value_range)
-    print(value_range)
+    print(image.GetOrigin(),image.GetSpacing())
+    print(image)
+    image_array = sitk.GetArrayFromImage(image)
+    print(image_array.shape)
 
-    # with open(INFO+'image_info.json','w') as f:
-    #     f.write(json.dumps(info,indent=4, separators=(',', ': ')))
-
+    a = load_image(f)
+    a=a.get_data()[:,:,:,0]
+    print(np.sum(image_array==a))
+    print(a.shape[0]*a.shape[1]*a.shape[2])
 if __name__=='__main__':
     # test()
     # with open(INFO+'image_info.json','r') as f:
     #     info = json.loads(f.read())
     # get_range(info)
-    test()
-
+    # test()
+    get_images_info()
 
 

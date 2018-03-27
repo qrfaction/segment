@@ -1,7 +1,6 @@
 from nipy.io.api import save_image,load_image
 from nipy.core.api import Image, AffineTransform
 from setting import LABEL_PATH,IMAGE_PATH,WINDOW,OUTPUT,PRE_LABEL_PATH,INFO,crop_setting
-import torch
 import numpy as np
 import json
 from random import randint,choice
@@ -42,8 +41,6 @@ def swap_axis(image,task,axis):
             raise ValueError("swapaxis error  task convlstm")
     else:
         raise ValueError("don't have this task")
-
-
 
 def crop_3d(image,id_h,area=None):
     """
