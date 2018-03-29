@@ -366,23 +366,34 @@ def get_range(images_info):
         print(low_bundary)
         print(high_bundary)
 
+
+
 def test():
-    f ='atlas/ADNI_011_S_0861_MR_MPR__GradWarp__B1_Correction__N3__Scaled_Br_20070108234412094_S19476_I35513.nii.gz'
-    image = sitk.ReadImage(f)
+    with open(INFO+'image_info.json','r') as f:
+        info = json.loads(f.read())
 
-    print(image.GetOrigin(),image.GetSpacing())
-    print(image)
-    image_array = sitk.GetArrayFromImage(image)
-    print(image_array.shape)
+    size_h1 = []
+    size_h2 = []
+    size_b = []
+    for name,im_info in info.items():
+        l_b = im_info['brain_z'][1] - im_info['brain_z'][0]
+        size_h1.append(
+            (im_info['h1_z'][1]-im_info['h1_z'][0])/l_b)
+        size_h2.append(
+            (im_info['h2_z'][1] - im_info['h2_z'][0])/l_b)
 
-    a = load_image(f)
-    a=a.get_data()[:,:,:,0]
-    print(np.sum(image_array==a))
-    print(a.shape[0]*a.shape[1]*a.shape[2])
+
+    size_h1 = sorted(size_h1)
+    print(size_h1)
+    size_h2 = sorted(size_h2)
+    print(size_h2)
+    size_b = sorted(size_b)
+    print(size_b)
+
+
 if __name__=='__main__':
     test()
-    # with open(INFO+'image_info.json','r') as f:
-    #     info = json.loads(f.read())
+
     # get_range(info)
     # test()
     # get_images_info()

@@ -398,8 +398,8 @@ def inference(model,modelname,image,axis=None):
     elif modelname == 'Unet':
         h1 = crop_3d(image, 1)
         h2 = crop_3d(image, 2)
-        h1 = model.predict(np.array([h1]))[0]
-        h2 = model.predict(np.array([h2]))[0]
+        h1 = model.predict_on_batch(np.array([h1]))[0]
+        h2 = model.predict_on_batch(np.array([h2]))[0]
     else:
         raise ValueError("don't have this model")
     return np.array(h1),np.array(h2)

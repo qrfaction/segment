@@ -6,7 +6,7 @@ config.gpu_options.allow_growth=True   #不全部占满显存, 按需分配
 session = tf.Session(config=config)
 KTF.set_session(session)
 
-from model import get_model,dice_metric
+from model import get_model,dice_metric,auc
 from tool import get_batch_images,get_files,Generator_3d,deal_label,inference
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
@@ -38,10 +38,12 @@ class segment_model:
         self.val_labels = np.array(labels)
 
     def fit(self,X,Y):
-        self.basenet.fit(X,Y,batch_size=2)
-
+        # self.basenet.fit(X,Y,batch_size=2)
+        score = self.basenet.train_on_batch(X,Y)
+        print('train:',score)
     def predict(self,X):
-        return self.basenet.predict(X,batch_size=1)
+        # return self.basenet.predict(X,batch_size=1)
+        return self.basenet.predict_on_batch(X)
 
     def evaluate(self):
         y_pred = []
@@ -53,8 +55,9 @@ class segment_model:
             y.append(h1_label)
             y_pred.append(h2)
             y.append(h2_label)
-        score = dice_metric(y_pred,y)
-        print(score)
+        # score = dice_metric(y,y_pred)
+        score = auc(y,y_pred)
+        print('val:',score)
         return score
 
     def save(self,path):
@@ -101,7 +104,7 @@ def main():
         model = segment_model(valfiles=validset)
 
 
-        train_model(model,trainset,batchsize=1)
+        train_model(model,trainset,batchsize=3)
 
         break
 if __name__=='__main__':
