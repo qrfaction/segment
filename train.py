@@ -1,8 +1,15 @@
+import tensorflow as tf
+import keras.backend.tensorflow_backend as KTF
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True   #不全部占满显存, 按需分配
+session = tf.Session(config=config)
+KTF.set_session(session)
+
 from model import get_model,dice_metric
 from tool import get_batch_images,get_files,Generator_3d,deal_label,inference
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
-
 
 
 
@@ -79,7 +86,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline')
         iter += 1
 
 
-def main(use_gpu=True):
+def main():
     from sklearn.cross_validation import KFold
     files = get_files(LABEL_PATH,prefix=False)
 
@@ -91,15 +98,14 @@ def main(use_gpu=True):
         trainset = files[train_index]
         validset = files[valid_index]
 
-        model = get_model(valfiles=validset,use_gpu=use_gpu)
+        model = segment_model(valfiles=validset)
 
 
-        train_model(model,trainset,batchsize=2)
-        model.load(MODEL_PATH+'baseline.pkl')
-        model.get_segment()
+        train_model(model,trainset,batchsize=1)
+
         break
 if __name__=='__main__':
-    main(True)
+    main()
 
 
 

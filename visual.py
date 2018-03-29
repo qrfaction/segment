@@ -380,11 +380,11 @@ def test():
     print(np.sum(image_array==a))
     print(a.shape[0]*a.shape[1]*a.shape[2])
 if __name__=='__main__':
-    # test()
+    test()
     # with open(INFO+'image_info.json','r') as f:
     #     info = json.loads(f.read())
     # get_range(info)
     # test()
-    get_images_info()
+    # get_images_info()
 
 

@@ -46,7 +46,7 @@ def prepocess():
         label = load_image(f_l).get_data()
 
         im = normlize_data(im)
-
+        label[label==2] = 1
         np.save(IMAGE_PATH + f[:-7]+'.npy',im)
         np.save(LABEL_PATH + f[:-7]+'.npy',label)
 

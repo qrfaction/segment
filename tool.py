@@ -112,8 +112,8 @@ class Generator_3d:
         image = get_image(image_file)
         label = get_image(label_file)
         data = np.concatenate([image,label],axis=-1)
+        data = self.process(data, h_id)
         assert data.shape == (80,80,40,2)
-        data = self.process(data,h_id)
         image = data[:, :, :, :1]
         label = data[:, :, :, 1:]
         return image,label
@@ -138,7 +138,7 @@ class Generator_3d:
             self.begin = 0
             self.end = self.batchsize
 
-        return batch_image,batch_label
+        return np.array(batch_image),np.array(batch_label)
 
     def flip(self,image):
         axis = randint(0, 2)
@@ -146,10 +146,8 @@ class Generator_3d:
             image = image[::-1, :, :, :]
         elif axis == 1:
             image = image[:, ::-1, :, :]
-        elif axis == 2:
-            image = image[:, :, ::-1, :]
         else:
-            raise ValueError('3d generator flip error')
+            image = image[:, :, ::-1, :]
         return image
 
 class Generator_convlstm:
@@ -350,13 +348,12 @@ def deal_label(modelname,label,axis=None):
     elif modelname == 'convlstm':
         assert axis is not None
         h1 = crop_3d(label,1)
-        h2 = crop_3d(label,1)
+        h2 = crop_3d(label,2)
         h1 = swap_axis(h1,'convlstm',axis)
         h2 = swap_axis(h2,'convlstm', axis)
-    elif modelname == 'unet':
+    elif modelname == 'Unet':
         h1 = crop_3d(label, 1)
-        h2 = crop_3d(label, 1)
-        print(h1.shape)
+        h2 = crop_3d(label, 2)
     else:
         raise ValueError("don't have this model")
     return h1,h2
@@ -392,18 +389,17 @@ def inference(model,modelname,image,axis=None):
     elif modelname == 'convlstm':
         assert axis is not None
         h1 = crop_3d(image,1)
-        h2 = crop_3d(image,1)
+        h2 = crop_3d(image,2)
         h1 = swap_axis(h1,'convlstm',axis)
         h2 = swap_axis(h2,'convlstm', axis)
         h1 = model.predict([h1])[0]
         h2 = model.predict([h2])[0]
         print(h1.shape)
-    elif modelname == 'unet':
+    elif modelname == 'Unet':
         h1 = crop_3d(image, 1)
-        h2 = crop_3d(image, 1)
-        h1 = model.predict([h1])[0]
-        h2 = model.predict([h2])[0]
-        print(h1.shape)
+        h2 = crop_3d(image, 2)
+        h1 = model.predict(np.array([h1]))[0]
+        h2 = model.predict(np.array([h2]))[0]
     else:
         raise ValueError("don't have this model")
     return np.array(h1),np.array(h2)
