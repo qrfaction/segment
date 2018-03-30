@@ -55,8 +55,8 @@ class segment_model:
             y.append(h1_label)
             y_pred.append(h2)
             y.append(h2_label)
-        # score = dice_metric(y,y_pred)
-        score = auc(y,y_pred)
+        score = dice_metric(y,y_pred)
+        # score = auc(y,y_pred)
         print('val:',score)
         return score
 
@@ -77,15 +77,16 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline')
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        cur_score = model.evaluate()
-        if  best_score < cur_score:
-            best_score = cur_score
-            best_epoch = iter
-            model.save(MODEL_PATH+model_name+'.h5')
-            print(best_score, best_epoch, '\n')
-        elif iter - best_epoch > 300:  # patience 为5
-            model.load(MODEL_PATH+model_name+'.h5')
-            return best_score
+        if iter>300:
+            cur_score = model.evaluate()
+            if  best_score < cur_score:
+                best_score = cur_score
+                best_epoch = iter
+                model.save(MODEL_PATH+model_name+'.h5')
+                print(best_score, best_epoch, '\n')
+            elif iter - best_epoch > 300:  # patience 为5
+                model.load(MODEL_PATH+model_name+'.h5')
+                return best_score
         iter += 1
 
 

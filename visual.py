@@ -369,27 +369,15 @@ def get_range(images_info):
 
 
 def test():
-    with open(INFO+'image_info.json','r') as f:
-        info = json.loads(f.read())
-
-    size_h1 = []
-    size_h2 = []
-    size_b = []
-    for name,im_info in info.items():
-        l_b = im_info['brain_z'][1] - im_info['brain_z'][0]
-        size_h1.append(
-            (im_info['h1_z'][1]-im_info['h1_z'][0])/l_b)
-        size_h2.append(
-            (im_info['h2_z'][1] - im_info['h2_z'][0])/l_b)
-
-
-    size_h1 = sorted(size_h1)
-    print(size_h1)
-    size_h2 = sorted(size_h2)
-    print(size_h2)
-    size_b = sorted(size_b)
-    print(size_b)
-
+    files = get_files(PRE_LABEL_PATH)
+    h1 = []
+    h2 = []
+    for f in files:
+        label = load_image(f).get_data()
+        h1.append(np.sum(label==1))
+        h2.append(np.sum(label==2))
+    print(sorted(h1))
+    print(sorted(h2))
 
 if __name__=='__main__':
     test()

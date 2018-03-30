@@ -4,15 +4,7 @@ from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool
 from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D
 from keras.models import Model
 from keras.optimizers import Nadam
-import tensorflow as tf
-import keras.backend.tensorflow_backend as KTF
-from sklearn.metrics import roc_auc_score
-config = tf.ConfigProto()
-config.gpu_options.allow_growth=True   #不全部占满显存, 按需分配
-session = tf.Session(config=config)
-
-# 设置session
-KTF.set_session(session)
+from postpocess import ostu
 
 
 def block_warp(block_name,input_layer,filters):
@@ -85,7 +77,7 @@ def get_model(modelname,axis=None):
         raise ValueError("don't write this model")
 
     model = Model(inputs=[x],outputs=[output])
-    model.compile(optimizer=Nadam(lr=0.001),loss=norm_celoss)
+    model.compile(optimizer=Nadam(lr=0.001),loss=focalLoss)
     print(model.summary())
     return model
 
@@ -104,8 +96,6 @@ def norm_celoss(y_true,y_pred):
     loss_neg = K.sum((1-y_true) * K.log(1-y_pred))/num_neg
     loss = -0.5*(loss_pos+loss_neg)
     return loss
-
-
 
 def diceLoss(y_true, y_pred,smooth = 0):
     y_pred = K.batch_flatten(y_pred)
@@ -129,6 +119,7 @@ def dice_metric(y,y_pred):
     score = 0
     for i,j in zip(y_pred,y):
         # i = np.around(i)
+        i = ostu(i)
         score += 2*np.sum(i*j)/(np.sum(i)+np.sum(j))
     score = score/len(y)
     return score
