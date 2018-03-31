@@ -19,10 +19,23 @@ def boost():
 
     pass
 
+def auto_thres(image):
+    img_seq = np.sort(image.flatten())
+    thres_index = int(img_seq[-3000:].sum())
+    if thres_index>2800:
+        thres_index=2800
+    elif thres_index<300:
+        thres_index=300
+    print(thres_index)
+    thres = img_seq[-thres_index]
+    image[image>=thres]=1
+    image[image<thres]=0
+    return image
+
 def ostu(image):
     img_seq= np.sort(image.flatten())
     # img_seq=img_seq[-3600:]
-
+    img_seq = img_seq*1000
     best_thres = 0
     max_g = -1
     index = -2800
@@ -32,12 +45,12 @@ def ostu(image):
     while(index <= -300):
         thres = img_seq[index]
 
-        foreground = img_seq[img_seq>thres]*1000
+        foreground = img_seq[img_seq>thres]
         w0 = len(foreground)
         vari0 = foreground.var()
         m0 = np.mean(foreground)
 
-        background = img_seq[img_seq <= thres]*1000
+        background = img_seq[img_seq <= thres]
         w1 = len(background)
         vari1 = background.var()
         m1 = np.mean(background)
@@ -47,7 +60,7 @@ def ostu(image):
 
         if g > max_g:
             max_g = g
-            best_thres = thres
+            best_thres = thres/1000
             best_i = index
             var_rate = vari1/vari0
 

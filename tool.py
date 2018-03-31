@@ -73,13 +73,13 @@ def crop_2d_slice(image,id_h,axis,shift,window=WINDOW,area=None):
         return image[
             area['x'][0]+shift-window : area['x'][0]+shift+window+1,
             area['y'][0]:area['y'][1],
-            area[z][0]:area[z][1]
+            area[z][0]:area[z][1],
         ]
     elif axis == 'y':
         return image[
             area['x'][0]:area['x'][1],
             area['y'][0] + shift - window : area['y'][0] + shift + window + 1,
-            area[z][0]:area[z][1]
+            area[z][0]:area[z][1],
         ]
     elif axis == 'z':
         return image[
@@ -202,7 +202,7 @@ class Generator_convlstm:
             self.begin = 0
             self.end = self.batchsize
 
-        return batch_image,batch_label
+        return np.array(batch_image),np.array(batch_label)
 
 
 
@@ -285,7 +285,7 @@ class Generator_2d_slice:
             self.begin = 0
             self.end = self.batchsize
 
-        return batch_image,batch_label
+        return np.array(batch_image),np.array(batch_label)
 
     def flip(self,image):
         axis = choice(self.flip_axis)
@@ -328,19 +328,16 @@ def seg_recovery(y_pred,filename):
 def deal_label(modelname,label,axis=None):
     if modelname == 'slice':
         assert axis is not None
-        if axis == 'x':
-            size = label.shape[0]
-        elif axis == 'y':
-            size = label.shape[1]
-        elif axis == 'z':
-            size = label.shape[2]
+        area = crop_setting['2d' + str(label.shape[2])]
+        if axis == 'z':
+            size = area[axis + '1'][1] - area[axis + '1'][0]
         else:
-            raise ValueError('3d generator flip error')
+            size = area[axis][1] - area[axis][0]
         h1 = []
         h2 = []
         for i in range(size):
-            slice_h1 = crop_2d_slice(label,1,axis,i)
-            slice_h2 = crop_2d_slice(label,2,axis,i)
+            slice_h1 = crop_2d_slice(label,1,axis,i)[:,:,:,0]
+            slice_h2 = crop_2d_slice(label,2,axis,i)[:,:,:,0]
             slice_h1 = swap_axis(slice_h1,'slice',axis)
             slice_h2 = swap_axis(slice_h2,'slice',axis)
             h1.append(slice_h1)
@@ -361,26 +358,24 @@ def deal_label(modelname,label,axis=None):
 def inference(model,modelname,image,axis=None):
     if modelname == 'slice':
         assert axis is not None
-        if axis == 'x':
-            size = image.shape[0]
-        elif axis == 'y':
-            size = image.shape[1]
-        elif axis == 'z':
-            size = image.shape[2]
+        area = crop_setting['2d'+str(image.shape[2])]
+        if axis == 'z':
+            size = area[axis+'1'][1]-area[axis+'1'][0]
         else:
-            raise ValueError('3d generator flip error')
+            size =  area[axis][1] - area[axis][0]
+
         seq_slice_h1 = []
         seq_slice_h2 = []
         for i in range(size):
-            slice_h1 = crop_2d_slice(image,1,axis,i)
-            slice_h2 = crop_2d_slice(image,2,axis,i)
+            slice_h1 = crop_2d_slice(image,1,axis,i)[:,:,:,0]
+            slice_h2 = crop_2d_slice(image,2,axis,i)[:,:,:,0]
             slice_h1 = swap_axis(slice_h1,'slice',axis)
             slice_h2 = swap_axis(slice_h2,'slice',axis)
             seq_slice_h1.append(slice_h1)
             seq_slice_h2.append(slice_h2)
 
-        y_pred_h1 = model.predict(seq_slice_h1)
-        y_pred_h2 = model.predict(seq_slice_h2)
+        y_pred_h1 = model.predict(np.array(seq_slice_h1))
+        y_pred_h2 = model.predict(np.array(seq_slice_h2))
         h1 = []
         h2 = []
         for i in range(size):

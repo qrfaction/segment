@@ -7,7 +7,7 @@ session = tf.Session(config=config)
 KTF.set_session(session)
 
 from model import get_model,dice_metric,auc
-from tool import get_batch_images,get_files,Generator_3d,deal_label,inference
+from tool import get_batch_images,get_files,Generator_3d,deal_label,inference,Generator_2d_slice,Generator_convlstm
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
 
@@ -17,7 +17,7 @@ class segment_model:
 
     def __init__(self,valfiles,modelname='Unet',axis = None):
 
-        self.basenet = get_model(modelname=modelname)
+        self.basenet = get_model(modelname=modelname,axis=axis)
 
 
         self.valfiles = valfiles
@@ -41,6 +41,7 @@ class segment_model:
         # self.basenet.fit(X,Y,batch_size=2)
         score = self.basenet.train_on_batch(X,Y)
         print('train:',score)
+
     def predict(self,X):
         # return self.basenet.predict(X,batch_size=1)
         return self.basenet.predict_on_batch(X)
@@ -66,9 +67,18 @@ class segment_model:
     def load(self,path):
         self.basenet.load_weights(path)
 
-def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline'):
+def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis=None):
 
-    generator = Generator_3d(train_files,batchsize)
+    if model_name=='slice':
+        assert axis is not None
+        generator = Generator_2d_slice(train_files,axis,batchsize=batchsize)
+    elif model_name=='convlstm':
+        assert axis is not None
+        generator = Generator_convlstm(files=train_files,axis=axis,batchsize=batchsize)
+    elif model_name=='Unet':
+        generator = Generator_3d(train_files,batchsize)
+    else:
+        raise NameError("don't have this model")
 
     iter = 1
     best_score = -1
@@ -77,7 +87,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline')
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        if iter>700:
+        if iter>0:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
@@ -90,7 +100,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline')
         iter += 1
 
 
-def main():
+def main(modelname='Unet',axis=None):
     from sklearn.cross_validation import KFold
     files = get_files(LABEL_PATH,prefix=False)
 
@@ -102,14 +112,14 @@ def main():
         trainset = files[train_index]
         validset = files[valid_index]
 
-        model = segment_model(valfiles=validset)
+        model = segment_model(valfiles=validset,modelname=modelname,axis=axis)
 
 
-        train_model(model,trainset,batchsize=3)
+        train_model(model,trainset,batchsize=3,model_name=modelname,axis=axis)
 
         break
 if __name__=='__main__':
-    main()
+    main('slice',axis='z')
 
 
 
