@@ -1,3 +1,12 @@
+import tensorflow as tf
+import keras.backend.tensorflow_backend as KTF
+
+config = tf.ConfigProto()
+config.gpu_options.allow_growth=True   #不全部占满显存, 按需分配
+session = tf.Session(config=config)
+KTF.set_session(session)
+
+
 import numpy as np
 from keras import backend as K
 from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool3D,Activation
@@ -5,7 +14,7 @@ from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTra
 from keras.models import Model
 from keras.optimizers import Nadam
 from postpocess import ostu
-
+from sklearn.metrics import roc_auc_score
 
 def block_warp(block_name,input_layer,filters):
     if block_name == 'conv':
@@ -77,7 +86,7 @@ def get_model(modelname,axis=None):
         raise ValueError("don't write this model")
 
     model = Model(inputs=[x],outputs=[output])
-    model.compile(optimizer=Nadam(lr=0.001),loss=focalLoss)
+    model.compile(optimizer=Nadam(lr=0.001),loss=stdLoss)
     print(model.summary())
     return model
 
@@ -87,6 +96,40 @@ def focalLoss(y_true,y_pred,alpha=2):
     loss = y_true * K.log(y_pred) * weight1 +\
         (1 - y_true) * K.log(1 - y_pred) * weight2
     loss = -K.mean(loss)
+    return loss
+
+def stdLoss(y_true,y_pred,alpha=2,w=0.1):
+    y_pred = K.batch_flatten(y_pred)
+    y_true = K.batch_flatten(y_true)
+
+    weight1 = K.pow(1 - y_pred, alpha)
+    weight2 = K.pow(y_pred, alpha)
+    loss = y_true * K.log(y_pred) * weight1 + \
+           (1 - y_true) * K.log(1 - y_pred) * weight2
+    loss = -K.mean(loss)
+
+    y_pred = y_pred*1000
+
+    num_pos = K.sum(y_true,axis=1)
+    num_neg = K.sum(1-y_true, axis=1)
+
+    mean_pos = K.sum(y_true*y_pred,axis=1)/num_pos
+    mean_neg = K.sum((1-y_true)*y_pred,axis=1)/num_neg
+    std_class = (mean_neg-mean_pos)**2                     #  类间方差
+
+    mean_pos = K.reshape(mean_pos,(-1,1))
+    std_pos = (y_true * (y_pred - mean_pos)) ** 2
+    std_pos = K.sum(std_pos,axis=1) / num_pos      #正例方差
+
+    mean_neg = K.reshape(mean_neg,(-1,1))
+    std_neg = ((1-y_true) * (y_pred - mean_neg)) ** 2
+    std_neg = K.sum(std_neg,axis=1) /num_neg        #负例方差
+
+    std_loss = (std_pos + std_neg)/std_class
+    std_loss = K.mean(std_loss)
+    # print(std_loss)
+
+    loss = (1-w) * loss + w * std_loss
     return loss
 
 def norm_celoss(y_true,y_pred):

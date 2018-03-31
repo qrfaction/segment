@@ -21,28 +21,38 @@ def boost():
 
 def ostu(image):
     img_seq= np.sort(image.flatten())
-    print(img_seq)
+    # img_seq=img_seq[-3600:]
+
     best_thres = 0
     max_g = -1
     index = -2800
     stride = 10
+    best_i = index
+    var_rate = 0
     while(index <= -300):
         thres = img_seq[index]
-        foreground = img_seq[img_seq>thres]
+
+        foreground = img_seq[img_seq>thres]*1000
         w0 = len(foreground)
-        u0 = np.mean(foreground)
+        vari0 = foreground.var()
+        m0 = np.mean(foreground)
 
-        background = img_seq[img_seq <= thres]
+        background = img_seq[img_seq <= thres]*1000
         w1 = len(background)
-        u1 = np.mean(background)
+        vari1 = background.var()
+        m1 = np.mean(background)
 
-        g = w0 * w1 * (u0-u1)**2
+        g = ((m0-m1)**2)/(vari0+vari1)
+        # g = (m0-m1)**2
 
         if g > max_g:
             max_g = g
             best_thres = thres
-        index+=stride
+            best_i = index
+            var_rate = vari1/vari0
 
+        index+=stride
+    print(best_i,var_rate)
     image[image>best_thres] = 1
     image[image<=best_thres] = 0
     return image

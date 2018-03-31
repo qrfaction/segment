@@ -77,7 +77,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'baseline')
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        if iter>300:
+        if iter>700:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
