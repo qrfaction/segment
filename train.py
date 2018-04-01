@@ -6,7 +6,7 @@ config.gpu_options.allow_growth=True   #不全部占满显存, 按需分配
 session = tf.Session(config=config)
 KTF.set_session(session)
 
-from model import get_model,dice_metric,auc
+from model import get_model,dice_metric,auc,pos_reg_score
 from tool import get_batch_images,get_files,Generator_3d,deal_label,inference,Generator_2d_slice,Generator_convlstm
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
@@ -58,7 +58,8 @@ class segment_model:
             y.append(h2_label)
         score = dice_metric(y,y_pred)
         # score = auc(y,y_pred)
-        print('val:',score)
+        reg_loss = pos_reg_score(y,y_pred)
+        print('val:',score,'reg_loss',reg_loss)
         return score
 
     def save(self,path):
@@ -87,7 +88,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        if iter>0:
+        if iter>1000:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
@@ -119,7 +120,7 @@ def main(modelname='Unet',axis=None):
 
         break
 if __name__=='__main__':
-    main('slice',axis='z')
+    main('slice','z')
 
 
 

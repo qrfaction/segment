@@ -105,7 +105,7 @@ def get_model(modelname,axis=None):
         raise ValueError("don't write this model")
 
     model = Model(inputs=[x],outputs=[output])
-    model.compile(optimizer=Nadam(lr=0.001),loss=focalLoss)
+    model.compile(optimizer=Nadam(lr=0.001),loss=norm_celoss,metrics=[pos_metric])
     print(model.summary())
     return model
 
@@ -117,16 +117,11 @@ def focalLoss(y_true,y_pred,alpha=3):
     loss = -K.mean(loss)
     return loss
 
-def sumLoss(y_true,y_pred,alpha=2,w=0):
+def sumLoss(y_true,y_pred,w=1e-7):
+    loss = norm_celoss(y_true, y_pred)
+
     y_pred = K.batch_flatten(y_pred)
     y_true = K.batch_flatten(y_true)
-
-    # weight1 = K.pow(1 - y_pred, alpha)
-    # weight2 = K.pow(y_pred, alpha)
-    # loss = y_true * K.log(y_pred) * weight1 + \
-    #        (1 - y_true) * K.log(1 - y_pred) * weight2
-    loss = y_true*K.log(y_pred)+(1-y_true)*K.log(1-y_pred)
-    loss = -K.mean(loss)
 
     num_pos = K.sum(y_true,axis=1)
     pos_loss = (K.sum(y_pred*y_true,axis=1)-num_pos)**2
@@ -139,48 +134,14 @@ def sumLoss(y_true,y_pred,alpha=2,w=0):
     loss = (1-w)*loss + w*thres_loss
     return loss
 
-def stdLoss(y_true,y_pred,alpha=2,w=0.05):
-    y_pred = K.batch_flatten(y_pred)
-    y_true = K.batch_flatten(y_true)
-
-    weight1 = K.pow(1 - y_pred, alpha)
-    weight2 = K.pow(y_pred, alpha)
-    loss = y_true * K.log(y_pred) * weight1 + \
-           (1 - y_true) * K.log(1 - y_pred) * weight2
-    loss = -K.mean(loss)
-
-    y_pred = y_pred*1000
-
-    num_pos = K.sum(y_true,axis=1)
-    num_neg = K.sum(1-y_true, axis=1)
-
-    mean_pos = K.sum(y_true*y_pred,axis=1)/num_pos
-    mean_neg = K.sum((1-y_true)*y_pred,axis=1)/num_neg
-    std_class = (mean_neg-mean_pos)**2                     #  类间方差
-
-    mean_pos = K.reshape(mean_pos,(-1,1))
-    std_pos = (y_true * (y_pred - mean_pos)) ** 2
-    std_pos = K.sum(std_pos,axis=1) / num_pos      #正例方差
-
-    mean_neg = K.reshape(mean_neg,(-1,1))
-    std_neg = ((1-y_true) * (y_pred - mean_neg)) ** 2
-    std_neg = K.sum(std_neg,axis=1) /num_neg        #负例方差
-
-    std_loss = (std_pos + std_neg)/std_class
-    std_loss = K.mean(std_loss)
-    # print(std_loss)
-
-    loss = (1-w) * loss + w * std_loss
-    return loss
-
-def norm_celoss(y_true,y_pred):
+def norm_celoss(y_true,y_pred,w=0.3):
     y_pred = K.batch_flatten(y_pred)
     y_true = K.batch_flatten(y_true)
     num_pos = K.sum(y_true,axis=1)
     num_neg = K.sum(1-y_true,axis=1)
     loss_pos = K.sum(y_true * K.log(y_pred),axis=1)/num_pos
     loss_neg = K.sum((1-y_true) * K.log(1-y_pred),axis=1)/num_neg
-    loss = -0.5*(loss_pos+loss_neg)
+    loss = -(w*loss_pos+(1-w)*loss_neg)
     return loss
 
 def diceLoss(y_true, y_pred,smooth = 0):
@@ -191,6 +152,22 @@ def diceLoss(y_true, y_pred,smooth = 0):
     loss =  2*( intersection + smooth) / (K.sum(y_true,axis=1) + K.sum(y_pred,axis=1) + smooth)
     # loss = K.log(loss)
     return -K.mean(loss)
+
+def regression_metric(y_true,y_pred):
+    y_pred = K.batch_flatten(y_pred)
+    y_true = K.batch_flatten(y_true)
+    true_thres = K.sum(y_true,axis=1)
+    pred_thres = K.sum(y_pred,axis=1)
+    loss = K.mean((true_thres-pred_thres)**2)
+    return loss**0.5
+
+def pos_metric(y_true,y_pred):
+    y_pred = K.batch_flatten(y_pred)
+    y_true = K.batch_flatten(y_true)
+    true_thres = K.sum(y_true, axis=1)
+    pred_thres = K.sum(y_pred*y_true, axis=1)
+    loss = K.mean((true_thres - pred_thres) ** 2)
+    return loss ** 0.5
 
 def auc(y_true,y_pred):
     score = 0
@@ -211,14 +188,14 @@ def dice_metric(y,y_pred):
     score = score/len(y)
     return score
 
-def ce_loss(y_pred,y):
+def pos_reg_score(y_true,y_pred):
     score = 0
-    for i, j in zip(y_pred, y):
-        loss= j * np.log(i)
-        loss = -np.mean(loss)
-        score +=loss
-    score = score / len(y)
-    return score
+    for i, j in zip(y_pred, y_true):
+        pos_num = j.sum()
+        thres = np.sum(i*j)
+        score += (pos_num-thres)**2
+    score = score / len(y_true)
+    return score ** 0.5
 
 
 
