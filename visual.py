@@ -6,6 +6,8 @@ import json
 import multiprocessing as mlp
 import numpy as np
 import SimpleITK as sitk
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 def image_anaylizer(images,labels):
     pos = {
@@ -370,14 +372,14 @@ def get_range(images_info):
 
 def test():
     files = get_files(PRE_LABEL_PATH)
-    h1 = []
-    h2 = []
-    for f in files:
+    h = []
+    for f in tqdm(files):
         label = load_image(f).get_data()
-        h1.append(np.sum(label==1))
-        h2.append(np.sum(label==2))
-    print(sorted(h1))
-    print(sorted(h2))
+        h.append(np.sum(label==1))
+        h.append(np.sum(label==2))
+    h=sorted(h)
+    sns.distplot(h, rug=True,bins=10)
+    plt.show()
 
 if __name__=='__main__':
     test()

@@ -58,8 +58,8 @@ class segment_model:
             y.append(h2_label)
         score = dice_metric(y,y_pred)
         # score = auc(y,y_pred)
-        reg_loss = pos_reg_score(y,y_pred)
-        print('val:',score,'reg_loss',reg_loss)
+        # reg_loss = pos_reg_score(y,y_pred)
+        print('val:',score)
         return score
 
     def save(self,path):
@@ -88,7 +88,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        if iter>1000:
+        if iter>500:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
@@ -120,7 +120,7 @@ def main(modelname='Unet',axis=None):
 
         break
 if __name__=='__main__':
-    main('slice','z')
+    main()
 
 
 

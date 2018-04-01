@@ -13,7 +13,7 @@ from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool
 from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D
 from keras.models import Model
 from keras.optimizers import Nadam
-from postpocess import ostu,auto_thres
+from postpocess import ostu,auto_thres,thres_predict,score_grad
 from sklearn.metrics import roc_auc_score
 
 def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=(1,1)):
@@ -105,11 +105,11 @@ def get_model(modelname,axis=None):
         raise ValueError("don't write this model")
 
     model = Model(inputs=[x],outputs=[output])
-    model.compile(optimizer=Nadam(lr=0.001),loss=norm_celoss,metrics=[pos_metric])
+    model.compile(optimizer=Nadam(lr=0.001,clipvalue=1),loss=norm_celoss)
     print(model.summary())
     return model
 
-def focalLoss(y_true,y_pred,alpha=3):
+def focalLoss(y_true,y_pred,alpha=2):
     weight1 = K.pow(1 - y_pred, alpha)
     weight2 = K.pow(y_pred,alpha)
     loss = y_true * K.log(y_pred) * weight1 +\
@@ -134,14 +134,15 @@ def sumLoss(y_true,y_pred,w=1e-7):
     loss = (1-w)*loss + w*thres_loss
     return loss
 
-def norm_celoss(y_true,y_pred,w=0.3):
+def norm_celoss(y_true,y_pred,w=0.05):
     y_pred = K.batch_flatten(y_pred)
     y_true = K.batch_flatten(y_true)
     num_pos = K.sum(y_true,axis=1)
     num_neg = K.sum(1-y_true,axis=1)
     loss_pos = K.sum(y_true * K.log(y_pred),axis=1)/num_pos
     loss_neg = K.sum((1-y_true) * K.log(1-y_pred),axis=1)/num_neg
-    loss = -(w*loss_pos+(1-w)*loss_neg)
+    loss = (w*loss_pos+(1-w)*loss_neg)
+    loss = -K.mean(loss)
     return loss
 
 def diceLoss(y_true, y_pred,smooth = 0):
@@ -182,7 +183,9 @@ def dice_metric(y,y_pred):
     score = 0
     for i,j in zip(y_pred,y):
         # i = np.around(i)
-        i = ostu(i)
+        # i = ostu(i)
+        # i = thres_predict(i)
+        i = score_grad(i)
         # i = auto_thres(i)
         score += 2*np.sum(i*j)/(np.sum(i)+np.sum(j))
     score = score/len(y)
