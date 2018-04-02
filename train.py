@@ -6,7 +6,7 @@ config.gpu_options.allow_growth=True   #不全部占满显存, 按需分配
 session = tf.Session(config=config)
 KTF.set_session(session)
 
-from model import get_model,dice_metric,auc,pos_reg_score
+from model import get_model,dice_metric,auc
 from tool import get_batch_images,get_files,Generator_3d,deal_label,inference,Generator_2d_slice,Generator_convlstm
 import numpy as np
 from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_PATH
@@ -15,9 +15,9 @@ from setting import MODEL_PATH,BATCHSIZE,OUTPUT,K,IMAGE_PATH,LABEL_PATH,SUMMARY_
 
 class segment_model:
 
-    def __init__(self,valfiles,modelname='Unet',axis = None):
+    def __init__(self,valfiles,modelname='Unet',axis = None,metric=dice_metric,loss=None,postPocess=None):
 
-        self.basenet = get_model(modelname=modelname,axis=axis)
+        self.basenet = get_model(modelname=modelname,axis=axis,loss=loss)
 
 
         self.valfiles = valfiles
@@ -25,7 +25,9 @@ class segment_model:
 
         self.modelname = modelname
         self.axis = axis
+        self.metric = metric
 
+        self.postPocess = postPocess
 
     def get_valset(self):
         val_images = [IMAGE_PATH + f for f in self.valfiles]
@@ -52,13 +54,27 @@ class segment_model:
         for label,image in zip(self.val_labels,self.val_images):
             h1,h2 = inference(self.basenet,self.modelname,image,self.axis)
             h1_label,h2_label = deal_label(self.modelname,label,self.axis)
+
+            # seq = h1.flatten()
+            # seq = np.sort(seq)
+            # seq = (seq - seq[0]) / (seq[-1] - seq[0])
+            # t_index = h1_label.sum()
+            # print(seq[-t_index])
+            # seq = h2.flatten()
+            # seq = np.sort(seq)
+            # seq = (seq - seq[0]) / (seq[-1] - seq[0])
+            # t_index = h2_label.sum()
+            # print(seq[-t_index])
+            #
+            h1,h2=self.postPocess(h1),self.postPocess(h2)
             y_pred.append(h1)
             y.append(h1_label)
             y_pred.append(h2)
             y.append(h2_label)
-        score = dice_metric(y,y_pred)
+
+        score = self.metric(y,y_pred)
         # score = auc(y,y_pred)
-        # reg_loss = pos_reg_score(y,y_pred)
+
         print('val:',score)
         return score
 
@@ -88,7 +104,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        if iter>500:
+        if iter>800:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
@@ -101,7 +117,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis
         iter += 1
 
 
-def main(modelname='Unet',axis=None):
+def main(loss,modelname='Unet',axis=None,metric=dice_metric,postPocess=None):
     from sklearn.cross_validation import KFold
     files = get_files(LABEL_PATH,prefix=False)
 
@@ -113,14 +129,23 @@ def main(modelname='Unet',axis=None):
         trainset = files[train_index]
         validset = files[valid_index]
 
-        model = segment_model(valfiles=validset,modelname=modelname,axis=axis)
+        model = segment_model(valfiles=validset,modelname=modelname,
+                              axis=axis,metric=metric,loss=loss,postPocess=postPocess)
 
 
         train_model(model,trainset,batchsize=3,model_name=modelname,axis=axis)
 
         break
 if __name__=='__main__':
-    main()
+    from model import focalLoss,diceLoss
+    from postpocess import score_grad,ostu
+    main(
+        loss=focalLoss,
+        modelname='Unet',
+        axis=None,
+        metric=dice_metric,
+        postPocess=score_grad
+    )
 
 
 

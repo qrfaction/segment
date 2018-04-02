@@ -1,6 +1,7 @@
 import numpy as np
 from sklearn import linear_model
 from sklearn.linear_model import LogisticRegression
+
 def average(results,weights=None):
 
     if weights is None:
@@ -15,68 +16,33 @@ def average(results,weights=None):
     return y_pred
 
 
-def boost():
+def get_bound(img_seq,up=-2800,low=-16000,window=10):
 
-    pass
+    g = np.zeros(up-low)
+    g[0] = img_seq[low:low+window].sum() - img_seq[low-window:low].sum()
+    for i in range(low+1,up):
+        pos = i - low
+        g[pos] = g[pos-1] + img_seq[i+window-1] + img_seq[i-window-1] - 2*img_seq[i-1]
 
-def auto_thres(image):
-    img_seq = np.sort(image.flatten())
-    thres_index = int(img_seq[-3000:].sum())
-    if thres_index>2800:
-        thres_index=2800
-    elif thres_index<300:
-        thres_index=300
-    print(thres_index)
-    thres = img_seq[-thres_index]
-    image[image>=thres]=1
-    image[image<thres]=0
-    return image
 
-def get_bound(img_seq,neg=-2800):
-    max_g = 0
-    best_i = 0
-    size = len(img_seq)+neg
-    for i in range(240000,size):
-        g = img_seq[i+10] - img_seq[i]
-        if g > max_g:
-            max_g = g
-            best_i = i
-    return best_i
+    max_g = g.max()
+    thres_index = np.where(g>0.7*max_g)[0] + low
+    return thres_index
 
 def score_grad(image):
     thres_seq = np.sort(image.flatten())
     img_seq = 10 * (thres_seq - thres_seq[0]) / (thres_seq[-1] - thres_seq[0])
-    bound = get_bound(img_seq,-300)
-    bound = bound-80*80*40
-    if bound<-2800:
-        bound=-2800
-    elif bound>-400:
-        bound=-400
-    thres = thres_seq[bound]
-    print(bound,thres)
+    bound = get_bound(img_seq,-400,-2800,window=50)
+    thres_index = int(np.median(bound))
+    thres = thres_seq[thres_index]
+    # for thres in bound:
+    #     neg_mean = img_seq[-3000:thres].mean()
+    #     pos_mean =
+
+    # thres = thres_seq[bound]
+    # print(bound,thres)
     image[image>=thres]=1
-    image[image<thres] = 1
-    return image
-
-def thres_predict(image,neg=-2800,pos=-300,step=10):
-    thres_seq = np.sort(image.flatten())
-    img_seq = 10*(thres_seq - thres_seq[0])/(thres_seq[-1] - thres_seq[0])
-
-    thres = thres_seq[-1200]
-
-    bound = get_bound(img_seq)
-    mean_neg = img_seq[bound:neg].mean()
-    mean_pos = img_seq[pos:].mean()
-
-    for i in range(-2800,-400,step):
-        dist_neg = img_seq[i]-mean_neg
-        dist_pos = mean_pos-img_seq[i]
-        if dist_pos<dist_neg:
-            thres = thres_seq[i]
-            print(i,80*80*40-bound,thres)
-            break
-    image[image >= thres] = 1
-    image[image < thres] = 0
+    image[image<thres] =0
     return image
 
 def ostu(image):
@@ -87,35 +53,34 @@ def ostu(image):
     best_thres = 0
     max_g = -1
     index = -2800
-    stride = 10
     best_i = index
-    var_rate = 0
-    while(index <= -400):
+    # var_rate = 0
+
+    bound = get_bound(img_seq,-300,-2800)
+    img_seq = img_seq[-3000:]
+    for index in bound:
         thres = img_seq[index]
 
         foreground = img_seq[img_seq>thres]
         var0 = foreground.var()
         m0 = np.mean(foreground)
-        num_pos = len(foreground)+300
 
         background = img_seq[img_seq<=thres]
         var1 = background.var()
         m1 = np.mean(background)
-        num_neg = 2800-num_pos
 
-        weight = (num_pos*num_neg)
+        weight = len(foreground)*(3000-len(foreground))
 
         g = weight*((m0-m1)**2)/(var0+var1)
-        # g = (m0-m1)**2
 
         if g > max_g:
             max_g = g
             best_thres = thres_seq[best_i]
             best_i = index
-            var_rate = var1/var0
+            # var_rate = var1/var0
 
-        index+=stride
-    print(best_i,var_rate,thres_seq[best_i])
+
+    # print(best_i,thres_seq[best_i])
     image[image>best_thres] = 1
     image[image<=best_thres] = 0
     return image

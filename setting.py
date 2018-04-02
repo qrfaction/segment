@@ -13,7 +13,6 @@ BATCHSIZE = 5
 WINDOW = 5
 K = 10   # 交叉验证
 
-
 crop_setting = {
     '3d166':{
         'x':[90,170],
@@ -53,6 +52,9 @@ crop_setting = {
         'z2': [80, 120],
     }
 }
+
+
+
 
 """
                  x1        y1       z1            x2       y2      z2         x      y         z

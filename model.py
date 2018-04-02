@@ -13,7 +13,7 @@ from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool
 from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D
 from keras.models import Model
 from keras.optimizers import Nadam
-from postpocess import ostu,auto_thres,thres_predict,score_grad
+from postpocess import ostu,get_bound,score_grad
 from sklearn.metrics import roc_auc_score
 
 def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=(1,1)):
@@ -58,16 +58,16 @@ def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=(1,1)
     return y
 
 
-def get_model(modelname,axis=None):
+def get_model(modelname,axis=None,loss=None):
     if modelname == 'Unet':
         x = Input((80,80,40,1))
-        conv0 = block_warp('conv',x,32)
-        conv1 = block_warp('conv', MaxPool3D(padding='same',strides=2)(x),64)
-        conv2 = block_warp('conv', MaxPool3D(padding='same',strides=2)(conv1),128)
-        deconv1 = block_warp('deconv', conv2,64)
-        deconv1 = block_warp('conv', concatenate([deconv1,conv1]),64)
-        deconv2 = block_warp('deconv', deconv1,32)
-        deconv2 = block_warp('conv', concatenate([deconv2, conv0]),32)
+        conv0 = block_warp('conv',x,16)
+        conv1 = block_warp('conv', MaxPool3D(padding='same',strides=2)(x),32)
+        conv2 = block_warp('conv', MaxPool3D(padding='same',strides=2)(conv1),64)
+        deconv1 = block_warp('deconv', conv2,32)
+        deconv1 = block_warp('conv', concatenate([deconv1,conv1]),32)
+        deconv2 = block_warp('deconv', deconv1,16)
+        deconv2 = block_warp('conv', concatenate([deconv2, conv0]),16)
         output = Conv3D(filters=1,kernel_size=3,activation='sigmoid',padding='same')(deconv2)
 
     elif modelname == 'convlstm':
@@ -93,19 +93,19 @@ def get_model(modelname,axis=None):
             x = Input((80,80,5))
         else:
             raise ValueError("deeplabv3+ axis error")
-        conv0 = block_warp('conv_2d', x, 32)
-        conv1 = block_warp('conv_2d', MaxPool2D(padding='same', strides=2)(x), 64)
-        conv2 = block_warp('conv_2d', MaxPool2D(padding='same', strides=2)(conv1), 128)
-        deconv1 = block_warp('deconv_2d', conv2, 64)
-        deconv1 = block_warp('conv_2d', concatenate([deconv1, conv1]), 64)
-        deconv2 = block_warp('deconv_2d', deconv1, 32)
-        deconv2 = block_warp('conv_2d', concatenate([deconv2, conv0]), 32)
-        output = Conv2D(filters=1, kernel_size=3, activation='sigmoid', padding='same')(deconv2)
+        # conv0 = block_warp('conv_2d', x, 32)
+        # conv1 = block_warp('conv_2d', MaxPool2D(padding='same', strides=2)(x), 64)
+        # conv2 = block_warp('conv_2d', MaxPool2D(padding='same', strides=2)(conv1), 128)
+        # deconv1 = block_warp('deconv_2d', conv2, 64)
+        # deconv1 = block_warp('conv_2d', concatenate([deconv1, conv1]), 64)
+        # deconv2 = block_warp('deconv_2d', deconv1, 32)
+        # deconv2 = block_warp('conv_2d', concatenate([deconv2, conv0]), 32)
+        # output = Conv2D(filters=1, kernel_size=3, activation='sigmoid', padding='same')(deconv2)
     else:
         raise ValueError("don't write this model")
-
+    assert loss is not None
     model = Model(inputs=[x],outputs=[output])
-    model.compile(optimizer=Nadam(lr=0.001,clipvalue=1),loss=norm_celoss)
+    model.compile(optimizer=Nadam(lr=0.001,clipvalue=1),loss=loss)
     print(model.summary())
     return model
 
@@ -182,11 +182,6 @@ def auc(y_true,y_pred):
 def dice_metric(y,y_pred):
     score = 0
     for i,j in zip(y_pred,y):
-        # i = np.around(i)
-        # i = ostu(i)
-        # i = thres_predict(i)
-        i = score_grad(i)
-        # i = auto_thres(i)
         score += 2*np.sum(i*j)/(np.sum(i)+np.sum(j))
     score = score/len(y)
     return score
