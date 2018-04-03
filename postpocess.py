@@ -1,6 +1,7 @@
 import numpy as np
-from sklearn import linear_model
 from sklearn.linear_model import LogisticRegression
+import pandas as pd
+from scipy import ndimage
 
 def average(results,weights=None):
 
@@ -14,7 +15,6 @@ def average(results,weights=None):
     y_pred /=np.sum(weights)
 
     return y_pred
-
 
 def get_bound(img_seq,up=-2800,low=-16000,window=10):
 
@@ -30,20 +30,27 @@ def get_bound(img_seq,up=-2800,low=-16000,window=10):
     return thres_index
 
 def score_grad(image):
+    image = (image-image.min())/(image.max()-image.min())
     thres_seq = np.sort(image.flatten())
-    img_seq = 10 * (thres_seq - thres_seq[0]) / (thres_seq[-1] - thres_seq[0])
-    bound = get_bound(img_seq,-400,-2800,window=50)
+    image[image<=thres_seq[-3000]] = 0
+    image[image>=thres_seq[-300]] = 1
+
+    # image = image_smooth(image)
+    image = ndimage.gaussian_filter(image,1)
+
+    thres_seq = np.sort(image.flatten())
+
+    bound = get_bound(thres_seq,-400,-2800,window=50)
     thres_index = int(np.median(bound))
     thres = thres_seq[thres_index]
-    # for thres in bound:
-    #     neg_mean = img_seq[-3000:thres].mean()
-    #     pos_mean =
-
-    # thres = thres_seq[bound]
     # print(bound,thres)
     image[image>=thres]=1
     image[image<thres] =0
     return image
+
+def image_smooth(image,size=3):
+    conv_kernel = np.ones((size,size,size,1))
+    return ndimage.convolve(image,conv_kernel,mode='constant')
 
 def ostu(image):
     thres_seq= np.sort(image.flatten())
@@ -89,3 +96,51 @@ def threshold_filter(image,y_pred):
     region = image[image>0.75]
     y_pred[region] = 0
     return y_pred
+
+def thres_predict(image):
+    thres_seq = np.sort(image.flatten())
+    img_seq = 10 * (thres_seq - thres_seq[0]) / (thres_seq[-1] - thres_seq[0])
+
+    def get_samples(img_seq,num_neg):
+        low = -num_neg-2800
+
+        X = np.zeros((num_neg+2800,4))
+        X[:,0] = img_seq[low:]
+
+        # cal grad
+        X[0,1] = img_seq[low:low+10].sum()-img_seq[low-10:low].sum()
+        for i in range(low+1,-10):
+            pos = i-low
+            X[pos,1] = X[pos-1,1] + img_seq[i+9] + img_seq[i-11] - 2*img_seq[i-1]
+        X[-10:,1] = X[-11,1]
+
+        # cal mean
+        for i in range(low,0):
+            pos = i-low
+            X[pos,2] = img_seq[low-200:i].mean()
+            X[pos,3] = img_seq[i:].mean()
+
+        # norm
+        for i in range(4):
+            min_col = X[:,i].min()
+            max_col = X[:,i].max()
+            X[:,i] = (X[:,i]-min_col)/(max_col-min_col)
+
+        train_data = np.concatenate([X[:-2800],X[-300:]])
+        test_data = X[-2800:-300]
+        Y = np.zeros(num_neg+300)
+        Y[-300:] = 1
+        return train_data,Y,test_data
+
+    train_data,Y,test_data = get_samples(img_seq,10000)
+    lr = LogisticRegression(n_jobs=-1,max_iter=200)
+    lr.fit(train_data,Y)
+    y_pred = lr.predict(test_data)
+
+    thres_index = int(-300 - y_pred.sum())
+    thres = thres_seq[thres_index]
+
+    image[image>=thres] = 1
+    image[image<thres] = 0
+
+    return image

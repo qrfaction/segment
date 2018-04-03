@@ -55,17 +55,6 @@ class segment_model:
             h1,h2 = inference(self.basenet,self.modelname,image,self.axis)
             h1_label,h2_label = deal_label(self.modelname,label,self.axis)
 
-            # seq = h1.flatten()
-            # seq = np.sort(seq)
-            # seq = (seq - seq[0]) / (seq[-1] - seq[0])
-            # t_index = h1_label.sum()
-            # print(seq[-t_index])
-            # seq = h2.flatten()
-            # seq = np.sort(seq)
-            # seq = (seq - seq[0]) / (seq[-1] - seq[0])
-            # t_index = h2_label.sum()
-            # print(seq[-t_index])
-            #
             h1,h2=self.postPocess(h1),self.postPocess(h2)
             y_pred.append(h1)
             y.append(h1_label)
@@ -104,7 +93,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        if iter>800:
+        if iter>1200:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
@@ -138,7 +127,7 @@ def main(loss,modelname='Unet',axis=None,metric=dice_metric,postPocess=None):
         break
 if __name__=='__main__':
     from model import focalLoss,diceLoss
-    from postpocess import score_grad,ostu
+    from postpocess import score_grad,ostu,thres_predict
     main(
         loss=focalLoss,
         modelname='Unet',
