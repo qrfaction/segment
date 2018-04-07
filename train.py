@@ -55,7 +55,12 @@ class segment_model:
             h1,h2 = inference(self.basenet,self.modelname,image,self.axis)
             h1_label,h2_label = deal_label(self.modelname,label,self.axis)
 
+            sum_y = np.sum(h1_label)
+            # sum_y_pred = np.sum(np.sort(h1.flatten())[-5000:])
+            # print("delta: ",sum_y,(sum_y_pred-sum_y)/sum_y)
+            print(np.sort(h1.flatten())[-sum_y:])
             h1,h2=self.postPocess(h1),self.postPocess(h2)
+
             y_pred.append(h1)
             y.append(h1_label)
             y_pred.append(h2)
@@ -73,7 +78,7 @@ class segment_model:
     def load(self,path):
         self.basenet.load_weights(path)
 
-def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis=None):
+def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis=None,model_id=0):
 
     if model_name=='slice':
         assert axis is not None
@@ -93,15 +98,15 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis
         samples_x,samples_y = generator.get_batch_data()
 
         model.fit(samples_x,samples_y)
-        if iter>1200:
+        if iter>1000:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
                 best_epoch = iter
-                model.save(MODEL_PATH+model_name+'.h5')
+                model.save(MODEL_PATH+model_name+str(model_id)+'.h5')
                 print(best_score, best_epoch, '\n')
-            elif iter - best_epoch > 300:  # patience 为5
-                model.load(MODEL_PATH+model_name+'.h5')
+            elif iter - best_epoch > 500:  # patience 为5
+                # model.load(MODEL_PATH+model_name+str(model_id)+'.h5')
                 return best_score
         iter += 1
 
@@ -118,44 +123,24 @@ def main(loss,modelname='Unet',axis=None,metric=dice_metric,postPocess=None):
         trainset = files[train_index]
         validset = files[valid_index]
 
+
         model = segment_model(valfiles=validset,modelname=modelname,
                               axis=axis,metric=metric,loss=loss,postPocess=postPocess)
 
+        train_model(model,trainset,batchsize=3,model_name=modelname,axis=axis,model_id=i)
 
-        train_model(model,trainset,batchsize=3,model_name=modelname,axis=axis)
 
-        break
+
 if __name__=='__main__':
     from model import focalLoss,diceLoss
-    from postpocess import score_grad,ostu,thres_predict
+    from postpocess import score_grad,ostu,thres_predict,threshold_filter
+
     main(
-        loss=focalLoss,
+        loss=diceLoss,
         modelname='Unet',
-        axis=None,
+        axis='z',
         metric=dice_metric,
-        postPocess=score_grad
+        postPocess=np.around,
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

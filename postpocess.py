@@ -26,26 +26,40 @@ def get_bound(img_seq,up=-2800,low=-16000,window=10):
 
 
     max_g = g.max()
-    thres_index = np.where(g>0.7*max_g)[0] + low
+    thres_index = np.where(g>0.9*max_g)[0] + low
     return thres_index
 
 def score_grad(image):
-    image = (image-image.min())/(image.max()-image.min())
     thres_seq = np.sort(image.flatten())
-    image[image<=thres_seq[-3000]] = 0
-    image[image>=thres_seq[-300]] = 1
+    bound = get_bound(thres_seq,-400,-2800,window=2)
 
-    # image = image_smooth(image)
-    image = ndimage.gaussian_filter(image,1)
+    # max_g = -1
+    # best_i = -2000
+    # for index in range(-2800, -350, 10):
+    #     thres = thres_seq[index]
+    #
+    #     foreground = thres_seq[thres_seq > thres]
+    #     m0 = np.mean(foreground)
+    #
+    #     background = thres_seq[thres_seq <= thres]
+    #     m1 = np.mean(background)
+    #
+    #     weight = len(foreground) * len(background)
+    #
+    #     g = weight * ((m0 - m1) ** 2)
+    #
+    #     if g > max_g:
+    #         max_g = g
+    #         # best_thres = thres_seq[best_i]
+    #         best_i = index
 
-    thres_seq = np.sort(image.flatten())
-
-    bound = get_bound(thres_seq,-400,-2800,window=50)
+    # thres_index = (int(np.median(bound))+best_i)//2
     thres_index = int(np.median(bound))
     thres = thres_seq[thres_index]
-    # print(bound,thres)
-    image[image>=thres]=1
-    image[image<thres] =0
+
+    image[image>=thres] = 1
+    image[image<thres]  = 0
+
     return image
 
 def image_smooth(image,size=3):
@@ -56,46 +70,56 @@ def ostu(image):
     thres_seq= np.sort(image.flatten())
     # img_seq=img_seq[-25600:]
 
-    img_seq = (thres_seq-thres_seq[0])/(thres_seq[-1]-thres_seq[0])
     best_thres = 0
     max_g = -1
     index = -2800
     best_i = index
     # var_rate = 0
 
-    bound = get_bound(img_seq,-300,-2800)
-    img_seq = img_seq[-3000:]
-    for index in bound:
-        thres = img_seq[index]
+    scores = []
+    for index in range(-2800,-350,10):
+        thres = thres_seq[index]
 
-        foreground = img_seq[img_seq>thres]
-        var0 = foreground.var()
+        foreground = thres_seq[thres_seq>thres]
+        # var0 = foreground.var()
         m0 = np.mean(foreground)
 
-        background = img_seq[img_seq<=thres]
-        var1 = background.var()
+        background = thres_seq[thres_seq<=thres]
+        # var1 = background.var()
         m1 = np.mean(background)
 
-        weight = len(foreground)*(3000-len(foreground))
+        weight = len(foreground)*len(background)
 
-        g = weight*((m0-m1)**2)/(var0+var1)
+        g = weight*((m0-m1)**2)
+
+        scores.append((g,index))
 
         if g > max_g:
             max_g = g
             best_thres = thres_seq[best_i]
             best_i = index
             # var_rate = var1/var0
+    # scores = np.array(sorted(scores,key=lambda x:x[0]))
 
+    # best_i = int(np.mean(scores[-20:,1]))
+    # best_thres = thres_seq[best_i]
 
-    # print(best_i,thres_seq[best_i])
     image[image>best_thres] = 1
     image[image<=best_thres] = 0
     return image
 
-def threshold_filter(image,y_pred):
-    region = image[image>0.75]
-    y_pred[region] = 0
-    return y_pred
+
+def threshold_filter(image):
+    thres_seq = np.sort(image.flatten())
+    thres_index = -int(np.sum(thres_seq[-5000:]))
+    if thres_index < -2800:
+        thres_index=-2800
+    elif thres_index > -400:
+        thres_index=-400
+    thres = thres_seq[thres_index]
+    image[image >= thres] = 1
+    image[image < thres] = 0
+    return image
 
 def thres_predict(image):
     thres_seq = np.sort(image.flatten())

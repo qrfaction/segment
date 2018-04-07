@@ -9,7 +9,7 @@ KTF.set_session(session)
 
 import numpy as np
 from keras import backend as K
-from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool3D,Activation
+from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool3D,Activation,Lambda
 from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D
 from keras.models import Model
 from keras.optimizers import Nadam
@@ -33,7 +33,7 @@ def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=(1,1)
         y = TimeDistributed(BatchNormalization())(y)
         y = TimeDistributed(Activation('relu'))(y)
     elif block_name == 'time_deconv':
-        y = TimeDistributed(Conv2DTranspose(filters=filters,kernel_size=3,padding='same'))(input_layer)
+        y = TimeDistributed(Conv2DTranspose(filters=filters,kernel_size=3,padding='same',strides=2))(input_layer)
         y = TimeDistributed(BatchNormalization())(y)
         y = TimeDistributed(Activation('relu'))(y)
     elif block_name == 'inception':
@@ -68,7 +68,8 @@ def get_model(modelname,axis=None,loss=None):
         deconv1 = block_warp('conv', concatenate([deconv1,conv1]),32)
         deconv2 = block_warp('deconv', deconv1,16)
         deconv2 = block_warp('conv', concatenate([deconv2, conv0]),16)
-        output = Conv3D(filters=1,kernel_size=3,activation='sigmoid',padding='same')(deconv2)
+        output = Conv3D(filters=1,kernel_size=3,activation='tanh',padding='same')(deconv2)
+        output = Lambda(lambda x:((x-K.min(x))/(K.max(x)-K.min(x))))(output)
 
     elif modelname == 'convlstm':
         assert axis is not None
@@ -81,7 +82,13 @@ def get_model(modelname,axis=None,loss=None):
         else:
             raise ValueError("convlstm axis error")
 
-        pass
+        encoder = block_warp('time_conv', x,32)
+        encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
+        encoder = ConvLSTM2D(filters=64,padding='same',return_sequences=True,kernel_size=3)(encoder)
+        # encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
+        decoder = block_warp('time_deconv', encoder,32)
+        output = TimeDistributed(Conv2D(filters=1, kernel_size=3,
+                                activation='sigmoid',padding='same'))(decoder)
 
     elif modelname == 'slice':
         assert axis is not None
@@ -102,7 +109,7 @@ def get_model(modelname,axis=None,loss=None):
         # deconv2 = block_warp('conv_2d', concatenate([deconv2, conv0]), 32)
         # output = Conv2D(filters=1, kernel_size=3, activation='sigmoid', padding='same')(deconv2)
     else:
-        raise ValueError("don't write this model")
+        raise ValueError("don't have this model")
     assert loss is not None
     model = Model(inputs=[x],outputs=[output])
     model.compile(optimizer=Nadam(lr=0.001,clipvalue=1),loss=loss)

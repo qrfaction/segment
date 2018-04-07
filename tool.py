@@ -175,8 +175,9 @@ class Generator_convlstm:
         image = get_image(image_file)
         label = get_image(label_file)
         data = np.concatenate([image,label],axis=-1)
-        assert data.shape == (80,80,40,2)
         data = self.process(data,h_id)
+        # print(data.shape)
+        # assert data.shape == (80, 80, 40, 2)
         image = data[:,:,:,:1]
         label = data[:,:,:,1:]
         return image,label
@@ -387,9 +388,8 @@ def inference(model,modelname,image,axis=None):
         h2 = crop_3d(image,2)
         h1 = swap_axis(h1,'convlstm',axis)
         h2 = swap_axis(h2,'convlstm', axis)
-        h1 = model.predict([h1])[0]
-        h2 = model.predict([h2])[0]
-        print(h1.shape)
+        h1 = model.predict(np.array([h1]))[0]
+        h2 = model.predict(np.array([h2]))[0]
     elif modelname == 'Unet':
         h1 = crop_3d(image, 1)
         h2 = crop_3d(image, 2)
