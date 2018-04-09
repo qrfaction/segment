@@ -98,20 +98,16 @@ def ostu(image):
             max_g = g
             best_thres = thres_seq[best_i]
             best_i = index
-            # var_rate = var1/var0
-    # scores = np.array(sorted(scores,key=lambda x:x[0]))
-
-    # best_i = int(np.mean(scores[-20:,1]))
-    # best_thres = thres_seq[best_i]
 
     image[image>best_thres] = 1
     image[image<=best_thres] = 0
     return image
 
 
-def threshold_filter(image):
+def threshold_filter(image,t=0.5):
     thres_seq = np.sort(image.flatten())
-    thres_index = -int(np.sum(thres_seq[-5000:]))
+    # thres_index = -int(np.sum(thres_seq[-5000:]))
+    thres_index = -len(thres_seq[thres_seq>t])
     if thres_index < -2800:
         thres_index=-2800
     elif thres_index > -400:

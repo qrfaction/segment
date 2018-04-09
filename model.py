@@ -124,8 +124,8 @@ def focalLoss(y_true,y_pred,alpha=2):
     loss = -K.mean(loss)
     return loss
 
-def sumLoss(y_true,y_pred,w=1e-7):
-    loss = norm_celoss(y_true, y_pred)
+def sumLoss(y_true,y_pred,w=1e-5):
+    loss = diceLoss(y_true, y_pred)
 
     y_pred = K.batch_flatten(y_pred)
     y_true = K.batch_flatten(y_true)
@@ -134,10 +134,10 @@ def sumLoss(y_true,y_pred,w=1e-7):
     pos_loss = (K.sum(y_pred*y_true,axis=1)-num_pos)**2
     pos_loss /=num_pos
 
-    num_neg = K.sum(1-y_true,axis=1)
-    neg_loss = (K.sum(y_pred*(1-y_true), axis=1)-num_neg)**2
-    neg_loss /= num_neg
-    thres_loss = K.mean(pos_loss+neg_loss)
+    # num_neg = K.sum(1-y_true,axis=1)
+    # neg_loss = (K.sum(y_pred*(1-y_true), axis=1)-num_neg)**2
+    # neg_loss /= num_neg
+    thres_loss = K.mean(pos_loss)
     loss = (1-w)*loss + w*thres_loss
     return loss
 

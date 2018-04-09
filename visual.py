@@ -371,15 +371,14 @@ def get_range(images_info):
 
 
 def test():
-    files = get_files(PRE_LABEL_PATH)
-    h = []
+    files = get_files(PRE_LABEL_PATH,prefix=False)
     for f in tqdm(files):
-        label = load_image(f).get_data()
-        h.append(np.sum(label==1))
-        h.append(np.sum(label==2))
-    h=sorted(h)
-    sns.distplot(h, rug=True,bins=10)
-    plt.show()
+        label = load_image(PRE_LABEL_PATH+f)
+        image = load_image(PRE_IMAGE_PATH+f).get_data()
+        print(image,label)
+    # h=sorted(h)
+    # sns.distplot(h, rug=True,bins=10)
+    # plt.show()
 
 if __name__=='__main__':
     test()

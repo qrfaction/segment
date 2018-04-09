@@ -39,6 +39,8 @@ def swap_axis(image,task,axis):
             return image.transpose((2, 1, 0, 3))
         else:
             raise ValueError("swapaxis error  task convlstm")
+    elif task == 'Unet':
+        return image
     else:
         raise ValueError("don't have this task")
 
