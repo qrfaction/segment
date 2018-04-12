@@ -146,7 +146,7 @@ def train_model(model,train_files,batchsize = BATCHSIZE,model_name = 'Unet',axis
         if iter % 100 == 0 :
             print('train',score)
 
-        if iter>1000:
+        if iter>2000:
             cur_score = model.evaluate()
             if  best_score < cur_score:
                 best_score = cur_score
@@ -188,8 +188,8 @@ if __name__=='__main__':
 
     main(
         loss=diceLoss,
-        modelname='Unet',
-        axis='z',
+        modelname='convlstm',
+        axis='x',
         metric=dice_metric,
         postPocess=threshold_filter,
         postPocess_str='around',

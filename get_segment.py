@@ -53,7 +53,7 @@ def seg_recovery(files,model_settings):
             area['x'][0]:area['x'][1],
             area['y'][0]:area['y'][1],
             area['z2'][0]:area['z2'][1]
-        ] = h2
+        ] = h2*2
 
         img = Image(image, img_3d.coordmap)
         save_image(img,OUTPUT+f)
