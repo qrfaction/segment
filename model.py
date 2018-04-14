@@ -115,7 +115,7 @@ def get_model(modelname,axis=None,loss=None):
     assert loss is not None
     model = Model(inputs=[x],outputs=[output])
     model.compile(optimizer=Nadam(lr=0.001,clipvalue=1),loss=loss)
-    print(model.summary())
+    # print(model.summary())
     return model
 
 def focalLoss(y_true,y_pred,alpha=2):

@@ -207,11 +207,11 @@ def EDA(labels,images,id):
     for key in vixel.keys():
         vixel[key]=sorted(vixel[key].items(),key=lambda x:x[0],reverse = True)
 
-    with open(id+'pos.json','w') as f:
+    with open(INFO+id+'pos.json','w') as f:
         f.write(json.dumps(pos,indent=4, separators=(',', ': ')))
-    with open(id+'voxel.json','w') as f:
+    with open(INFO+id+'voxel.json','w') as f:
         f.write(json.dumps(vixel,indent=4, separators=(',', ': ')))
-    with open(id+'effec_range.json','w') as f:
+    with open(INFO+id+'effec_range.json','w') as f:
         f.write(json.dumps(effec_range,indent=4, separators=(',', ': ')))
 
 def EDA_warp():

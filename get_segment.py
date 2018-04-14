@@ -5,6 +5,9 @@ from train import segment_model
 from tool import swap_axis,get_files
 from nipy.core.api import Image
 from model import diceLoss
+from prepocess import normlize_data
+from tqdm import tqdm
+import numpy as np
 
 def model_predict(image,seg_model):
     h1, h2 = seg_model.inference(image)
@@ -28,9 +31,10 @@ def seg_recovery(files,model_settings):
     for f in files:
         img_3d = load_image(TEST_DATA+f)
         image = img_3d.get_data()
+        image = normlize_data(image)
         result_h1 = []
         result_h2 = []
-        for setting in model_settings:
+        for setting in tqdm(model_settings):
             seg_model = get_model(setting)
             h1,h2 = model_predict(image,seg_model)
             result_h1.append(h1)
@@ -38,24 +42,25 @@ def seg_recovery(files,model_settings):
         h1 = average(result_h1)
         h2 = average(result_h2)
 
-        h1 = h1.around()
-        h2 = h2.around()
+        h1 = np.around(h1)
+        h2 = np.around(h2)
 
         shape = str(image.shape[2])
         area = crop_setting['3d'+shape]
 
-        image[
+        label = np.zeros_like(image)
+        label[
             area['x'][0]:area['x'][1],
             area['y'][0]:area['y'][1],
             area['z1'][0]:area['z1'][1]
         ] = h1
-        image[
+        label[
             area['x'][0]:area['x'][1],
             area['y'][0]:area['y'][1],
             area['z2'][0]:area['z2'][1]
         ] = h2*2
 
-        img = Image(image, img_3d.coordmap)
+        img = Image(label, img_3d.coordmap)
         save_image(img,OUTPUT+f)
 
 def predict_test_data():
@@ -64,14 +69,14 @@ def predict_test_data():
     models = []
     for file_name in model_files:
 
-        setting  = file_name.split('_')
+        m_setting  = file_name.split('_')
         model_setting = {}
-        model_setting['modelname'] = setting[0]
-        model_setting['axis'] = None if setting[3] == 'None' else setting[3]
+        model_setting['modelname'] = m_setting[0]
+        model_setting['axis'] = None if m_setting[2] == 'None' else m_setting[2]
         model_setting['loss'] = diceLoss
-        if setting[3] == 'ostu':
+        if m_setting[3] == 'ostu':
             model_setting['postPocess'] = ostu
-        elif setting[3] == 'around':
+        elif m_setting[3] == 'around':
             model_setting['postPocess'] = threshold_filter
         else:
             raise NameError("postPocess error")
