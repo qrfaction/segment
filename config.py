@@ -14,7 +14,7 @@ BATCHSIZE = 5
 WINDOW = 5
 K = 10   # 交叉验证
 
-crop_setting = {
+crop_config = {
     '3d166':{
         'x':[90,170],
         'y':[100,180],

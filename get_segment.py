@@ -1,4 +1,4 @@
-from setting import crop_setting,OUTPUT,TEST_DATA,MODEL_PATH
+from config import crop_config,OUTPUT,TEST_DATA,MODEL_PATH
 from postpocess import average,ostu,threshold_filter
 from nipy import load_image,save_image
 from train import segment_model
@@ -46,7 +46,7 @@ def seg_recovery(files,model_settings):
         h2 = np.around(h2)
 
         shape = str(image.shape[2])
-        area = crop_setting['3d'+shape]
+        area = crop_config['3d'+shape]
 
         label = np.zeros_like(image)
         label[

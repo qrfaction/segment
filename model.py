@@ -6,41 +6,73 @@ config.gpu_options.allow_growth=True   #不全部占满显存, 按需分配
 session = tf.Session(config=config)
 KTF.set_session(session)
 
+from keras.utils import multi_gpu_model
 
 import numpy as np
 from keras import backend as K
-from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool3D,Activation,Lambda
-from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D,Bidirectional
+from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool3D,Activation,Lambda,Permute
+from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D,Bidirectional,add
 from keras.models import Model
-from keras.optimizers import Nadam
-from postpocess import ostu,get_bound,score_grad
+from keras.optimizers import Nadam,RMSprop
 from sklearn.metrics import roc_auc_score
 
-def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=(1,1)):
+def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=1):
+    def conv_block(input_layer,filters,k=3):
+        y = Conv3D(filters=filters, kernel_size=k, padding='same')(input_layer)
+        y = BatchNormalization()(y)
+        y = Activation('relu')(y)
+        return y
+
     if block_name == 'conv':
-        y = Conv3D(filters=filters,kernel_size=3,padding='same')(input_layer)
+        y = conv_block(input_layer,filters)
+        y = conv_block(y,filters)
+
+    elif block_name == 'dialtion':
+        y = Conv3D(filters=filters, kernel_size=kernal_size, padding='same', dilation_rate=dilation_rate)(input_layer)
         y = BatchNormalization()(y)
         y = Activation('relu')(y)
-        y = Conv3D(filters=filters,kernel_size=3,padding='same')(y)
-        y = BatchNormalization()(y)
-        y = Activation('relu')(y)
+
     elif block_name == 'deconv':
         y = Conv3DTranspose(filters=filters,kernel_size=3,strides=2,padding='same')(input_layer)
         y = BatchNormalization()(y)
         y = Activation('relu')(y)
+
     elif block_name == 'time_conv':
         y = TimeDistributed(Conv2D(filters=filters,kernel_size=3,padding='same'))(input_layer)
         y = TimeDistributed(BatchNormalization())(y)
         y = TimeDistributed(Activation('relu'))(y)
+
     elif block_name == 'time_deconv':
         y = TimeDistributed(Conv2DTranspose(filters=filters,kernel_size=3,padding='same',strides=2))(input_layer)
         y = TimeDistributed(BatchNormalization())(y)
         y = TimeDistributed(Activation('relu'))(y)
+
     elif block_name == 'inception':
-        # y = TimeDistributed(Conv2DTranspose(filters=filters,kernel_size=3,padding='same'))(input_layer)
-        # y = TimeDistributed(BatchNormalization())(y)
-        # y = TimeDistributed(PReLU())(y)s
-        pass
+        filters = filters//4
+
+        # c1 = Conv3D(filters=filters, kernel_size=1, padding='same')(input_layer)
+        c1 = conv_block(input_layer,filters,1)
+
+        # c3 = Conv3D(filters=filters, kernel_size=1, padding='same')(input_layer)
+        # c3 = Conv3D(filters=filters, kernel_size=3, padding='same')(c3)
+        c3 = conv_block(input_layer,filters,1)
+        c3 = conv_block(c3,filters,3)
+
+        c5 = MaxPool3D(pool_size=3,padding='same',strides=1)(input_layer)
+        # c5 = Conv3D(filters=filters, kernel_size=3, padding='same')(c5)
+        c5 = conv_block(c5,filters,3)
+
+
+        # c7 = Conv3D(filters=filters, kernel_size=1, padding='same')(input_layer)
+        # c7 = Conv3D(filters=filters, kernel_size=3, padding='same')(c7)
+        # c7 = Conv3D(filters=filters, kernel_size=3, padding='same')(c7)
+        c7 = conv_block(input_layer,filters,1)
+        c7 = conv_block(c7, filters, 3)
+        c7 = conv_block(c7, filters, 3)
+
+        y = concatenate([c1,c3,c5,c7])
+        # c_all = BatchNormalization()(c_all)
+        # y = Activation('relu')(c_all)
 
     elif block_name == 'conv_2d':
         y = Conv2D(filters=filters, kernel_size=kernal_size,strides=1, padding='same')(input_layer)
@@ -61,14 +93,24 @@ def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=(1,1)
 def get_model(modelname,axis=None,loss=None):
     if modelname == 'Unet':
         x = Input((80,80,40,1))
-        conv0 = block_warp('conv',x,16)
-        conv1 = block_warp('conv', MaxPool3D(padding='same',strides=2)(x),32)
-        conv2 = block_warp('conv', MaxPool3D(padding='same',strides=2)(conv1),64)
-        deconv1 = block_warp('deconv', conv2,32)
-        deconv1 = block_warp('conv', concatenate([deconv1,conv1]),32)
-        deconv2 = block_warp('deconv', deconv1,16)
-        deconv2 = block_warp('conv', concatenate([deconv2, conv0]),16)
-        output = Conv3D(filters=1,kernel_size=3,activation='tanh',padding='same')(deconv2)
+        conv0 = block_warp('conv',x,24)
+        conv1 = block_warp('conv', MaxPool3D(padding='same',strides=2)(conv0),48)
+
+        conv2 = block_warp('conv', MaxPool3D(padding='same',strides=2)(conv1),96)
+
+        deconv1 = block_warp('deconv', conv2,48)
+        # conv1 = block_warp('conv',conv1,64)
+        # conv1 = block_warp('conv',conv1,32)
+        deconv1 = block_warp('conv', concatenate([deconv1,conv1]),48)
+
+        deconv2 = block_warp('deconv', deconv1,24)
+        # conv0 = block_warp('conv', conv0, 32)
+        # conv0 = block_warp('conv', conv0, 16).....
+        deconv2 = block_warp('conv', concatenate([deconv2, conv0]),48)
+
+        output = Conv3D(filters=1,kernel_size=3,padding='same')(deconv2)
+        # output = BatchNormalization()(output)
+        # output =
 
     elif modelname == 'convlstm':
         assert axis is not None
@@ -81,103 +123,78 @@ def get_model(modelname,axis=None,loss=None):
         else:
             raise ValueError("convlstm axis error")
 
-        encoder = block_warp('time_conv',x,16)
-        encoder = TimeDistributed(MaxPool2D(padding='same'))(encoder)
-        encoder = Bidirectional(ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3)
-                                ,merge_mode='sum')(encoder)
-        encoder = Bidirectional(ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3,dilation_rate=2)
-                                ,merge_mode='sum')(encoder)
-        decoder = block_warp('time_deconv', encoder,16)
-        output = TimeDistributed(Conv2D(filters=1, kernel_size=3,
-                                activation='sigmoid',padding='same'))(decoder)
 
-    elif modelname == 'slice':
-        assert axis is not None
-        if axis == 'x':  #  y z  x
-            x = Input((80,40,5))
-        elif axis == 'y':  # x z y
-            x = Input((80,40,5))
-        elif axis == 'z':  # x y z
-            x = Input((80,80,5))
-        else:
-            raise ValueError("deeplabv3+ axis error")
-        # conv0 = block_warp('conv_2d', x, 32)
-        # conv1 = block_warp('conv_2d', MaxPool2D(padding='same', strides=2)(x), 64)
-        # conv2 = block_warp('conv_2d', MaxPool2D(padding='same', strides=2)(conv1), 128)
-        # deconv1 = block_warp('deconv_2d', conv2, 64)
-        # deconv1 = block_warp('conv_2d', concatenate([deconv1, conv1]), 64)
-        # deconv2 = block_warp('deconv_2d', deconv1, 32)
-        # deconv2 = block_warp('conv_2d', concatenate([deconv2, conv0]), 32)
-        # output = Conv2D(filters=1, kernel_size=3, activation='sigmoid', padding='same')(deconv2)
+        conv0 = block_warp('conv',x,8)
+        encoder = Conv3D(16,kernel_size=3,padding='same',activation='relu',strides=2)(conv0)
+
+        x_z = encoder
+        x_x = Permute((3, 2, 1, 4))(encoder)
+        x_y = Permute((2, 1, 3, 4))(encoder)
+
+        lstm_z = Bidirectional(ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3)
+                                ,merge_mode='sum')(x_z)
+
+
+        lstm_y = Bidirectional(ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3)
+                               , merge_mode='sum')(x_y)
+        lstm_y = Permute((2,1,3,4))(lstm_y)
+
+
+        lstm_x = Bidirectional((ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3))
+                               , merge_mode='sum')(x_x)
+        lstm_x = Permute((3,2,1,4))(lstm_x)
+
+
+        add_layer = add([lstm_x,lstm_y,lstm_z])
+
+
+        decoder = Conv3DTranspose(filters=32,kernel_size=3,strides=2,padding='same')(add_layer)
+
+        # conv1 = block_warp('conv',conv0,32)
+        #
+        # decoder = multiply([conv1,decoder])
+
+        output = Conv3D(filters=1,kernel_size=3,activation='tanh',padding='same')(decoder)
     else:
         raise ValueError("don't have this model")
-    output = Lambda(lambda x:((x-K.min(x))/(K.max(x)-K.min(x))))(output)
+
+    output = Lambda(norm_layer)(output)
+
     assert loss is not None
+
+    # with tf.device('/cpu:0'):
     model = Model(inputs=[x],outputs=[output])
-    model.compile(optimizer=Nadam(lr=0.001,clipvalue=1),loss=loss)
-    # print(model.summary())
+    # model = multi_gpu_model(model,gpus=3)
+    model.compile(optimizer=Nadam(lr=0.001,clipnorm=1),loss=loss,metrics=[diceMetric])
+    print(model.summary())
     return model
 
-def focalLoss(y_true,y_pred,alpha=2):
-    weight1 = K.pow(1 - y_pred, alpha)
-    weight2 = K.pow(y_pred,alpha)
-    loss = y_true * K.log(y_pred) * weight1 +\
-        (1 - y_true) * K.log(1 - y_pred) * weight2
-    loss = -K.mean(loss)
-    return loss
+def norm_layer(x):
+    x = (x - K.min(x,axis=[1,2,3,4],keepdims=True)) / \
+           (K.max(x,axis=[1,2,3,4],keepdims=True)-K.min(x,axis=[1,2,3,4],keepdims=True))
+    return x
 
-def sumLoss(y_true,y_pred,w=1e-5):
-    loss = diceLoss(y_true, y_pred)
-
+def celoss(y_true,y_pred):
     y_pred = K.batch_flatten(y_pred)
     y_true = K.batch_flatten(y_true)
+    loss = y_true*K.log(y_pred)+(1-y_true)*K.log(1-y_pred)
+    return -K.mean(loss)
 
-    num_pos = K.sum(y_true,axis=1)
-    pos_loss = (K.sum(y_pred*y_true,axis=1)-num_pos)**2
-    pos_loss /=num_pos
-
-    # num_neg = K.sum(1-y_true,axis=1)
-    # neg_loss = (K.sum(y_pred*(1-y_true), axis=1)-num_neg)**2
-    # neg_loss /= num_neg
-    thres_loss = K.mean(pos_loss)
-    loss = (1-w)*loss + w*thres_loss
-    return loss
-
-def norm_celoss(y_true,y_pred,w=0.05):
-    y_pred = K.batch_flatten(y_pred)
+def diceMetric(y_true,y_pred,smooth = 0):
+    y_pred = K.batch_flatten(K.round(y_pred))
     y_true = K.batch_flatten(y_true)
-    num_pos = K.sum(y_true,axis=1)
-    num_neg = K.sum(1-y_true,axis=1)
-    loss_pos = K.sum(y_true * K.log(y_pred),axis=1)/num_pos
-    loss_neg = K.sum((1-y_true) * K.log(1-y_pred),axis=1)/num_neg
-    loss = (w*loss_pos+(1-w)*loss_neg)
-    loss = -K.mean(loss)
-    return loss
+    y = y_true * y_pred
+    intersection = K.sum(y, axis=1)
+    loss = 2 * (intersection + smooth) / (K.sum(y_true, axis=1) + K.sum(y_pred, axis=1) + smooth)
+    return K.mean(loss)
 
-def diceLoss(y_true, y_pred,smooth = 0):
+def diceLoss(y_true, y_pred):
     y_pred = K.batch_flatten(y_pred)
     y_true = K.batch_flatten(y_true)
     y = y_true * y_pred
-    intersection = K.sum(y,axis=1)
-    loss =  2*( intersection + smooth) / (K.sum(y_true,axis=1) + K.sum(y_pred,axis=1) + smooth)
-    # loss = K.log(loss)
+    intersection = K.sum(y, axis=1)
+    loss = 2 * intersection / (K.sum(y_true, axis=1) + K.sum(y_pred, axis=1))
     return -K.mean(loss)
-
-def regression_metric(y_true,y_pred):
-    y_pred = K.batch_flatten(y_pred)
-    y_true = K.batch_flatten(y_true)
-    true_thres = K.sum(y_true,axis=1)
-    pred_thres = K.sum(y_pred,axis=1)
-    loss = K.mean((true_thres-pred_thres)**2)
-    return loss**0.5
-
-def pos_metric(y_true,y_pred):
-    y_pred = K.batch_flatten(y_pred)
-    y_true = K.batch_flatten(y_true)
-    true_thres = K.sum(y_true, axis=1)
-    pred_thres = K.sum(y_pred*y_true, axis=1)
-    loss = K.mean((true_thres - pred_thres) ** 2)
-    return loss ** 0.5
 
 def auc(y_true,y_pred):
     score = 0
@@ -194,16 +211,6 @@ def dice_metric(y,y_pred):
         score += 2*np.sum(i*j)/(np.sum(i)+np.sum(j))
     score = score/len(y)
     return score
-
-def pos_reg_score(y_true,y_pred):
-    score = 0
-    for i, j in zip(y_pred, y_true):
-        pos_num = j.sum()
-        thres = np.sum(i*j)
-        score += (pos_num-thres)**2
-    score = score / len(y_true)
-    return score ** 0.5
-
 
 
 

@@ -4,7 +4,7 @@ from setting import IMAGE_PATH,LABEL_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH,INFO
 import numpy as np
 from tqdm import tqdm
 import json
-from nipy.core.api import Image, AffineTransform
+import cv2
 
 def get_shape():
     images = get_files(PRE_IMAGE_PATH,prefix=False)
@@ -46,8 +46,12 @@ def prepocess():
         im = load_image(f_i).get_data()
         label = load_image(f_l).get_data()
 
-        im = normlize_data(im)
-        label[label==2] = 1
+        label[label == 2] = 1
+
+        # im = cv2.resize(im,(192,192,160,1),interpolation=cv2.INTER_LINEAR)
+        # print(im.shape)
+        # im = normlize_data(im)
+
         np.save(IMAGE_PATH + f[:-7]+'.npy',im)
         np.save(LABEL_PATH + f[:-7]+'.npy',label)
 

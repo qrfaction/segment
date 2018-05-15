@@ -1,9 +1,9 @@
 from nipy.io.api import save_image,load_image
-from nipy.core.api import Image, AffineTransform
-from setting import LABEL_PATH,IMAGE_PATH,WINDOW,OUTPUT,PRE_LABEL_PATH,INFO,crop_setting
+from nipy.core.api import Image
+from config import LABEL_PATH,IMAGE_PATH,OUTPUT,PRE_LABEL_PATH,INFO,crop_config
 import numpy as np
 import json
-from random import randint,choice
+from random import randint
 
 def get_files(path,prefix = True):
     import os
@@ -58,7 +58,7 @@ def crop_3d(image,id_h,area=None):
     :return:
     """
     if area is None:
-        area = crop_setting['3d'+str(image.shape[2])]
+        area = crop_config['3d'+str(image.shape[2])]
     z = 'z'+str(id_h)
     return image[
                 area['x'][0]:area['x'][1],
@@ -66,40 +66,33 @@ def crop_3d(image,id_h,area=None):
                 area[z][0]:area[z][1]
             ]
 
-def crop_2d_slice(image,id_h,axis,shift,window=WINDOW,area=None):
-    window = window//2
-    if area is None:
-        area = crop_setting['2d'+str(image.shape[2])]
-    z = 'z'+str(id_h)
-    if axis == 'x':
-        return image[
-            area['x'][0]+shift-window : area['x'][0]+shift+window+1,
-            area['y'][0]:area['y'][1],
-            area[z][0]:area[z][1],
-        ]
-    elif axis == 'y':
-        return image[
-            area['x'][0]:area['x'][1],
-            area['y'][0] + shift - window : area['y'][0] + shift + window + 1,
-            area[z][0]:area[z][1],
-        ]
-    elif axis == 'z':
-        return image[
-            area['x'][0]:area['x'][1],
-            area['y'][0]:area['y'][1],
-            area[z][0] + shift - window : area[z][0] + shift + window + 1,
-        ]
-    else:
-        raise ValueError('crop_2d axis error')
+def select_area(img_info,h_id):
+    h = 'h' + str(h_id) + '_'
+    area = {}
+    for axis,i_size in zip(['x','y','z'],[80,80,40]):
+        len_h = img_info[h+axis+'_range']+1
+        start = img_info[h+axis]
+
+        assert len_h<i_size
+        start = randint(start[0]-(i_size-len_h),start[0])
+        area[axis] = [start,start+i_size]
+
+    area['z'+str(h_id)] = area['z']
+    return area
 
 class Generator_3d:
     def __init__(self,files,batchsize):
         self.images = []
         self.labels = []
+        self.files = []
         for i in [1,2]:
             for f in files:
                 self.images.append((IMAGE_PATH+f,i))
                 self.labels.append((LABEL_PATH+f,i))
+                self.files.append((f[:-3]+'nii.gz',i))
+
+        with open(INFO+'image_info.json','r') as f:
+            self.img_info = json.loads(f.read())
 
         self.batchsize = batchsize
         self.begin = 0
@@ -111,16 +104,21 @@ class Generator_3d:
     def getitem(self, index):  # 返回的是tensor
         image_file,h_id = self.images[index]
         label_file,h_id = self.labels[index]
+        file,h_id = self.files[index]
+
         image = get_image(image_file)
         label = get_image(label_file)
+
         data = np.concatenate([image,label],axis=-1)
-        data = self.process(data, h_id)
+        data = self.process(data,h_id,file)
         assert data.shape == (80,80,40,2)
+
         image = data[:, :, :, :1]
         label = data[:, :, :, 1:]
         return image,label
 
-    def process(self,image,h_id):
+    def process(self,image,h_id,file):
+        # area = select_area(self.img_info[file], h_id)
         image = crop_3d(image,h_id)
         image = self.flip(image)
         return image
@@ -143,12 +141,14 @@ class Generator_3d:
         return np.array(batch_image),np.array(batch_label)
 
     def flip(self,image):
-        axis = randint(0, 2)
+        axis = randint(0, 1)
         if axis == 0:
             image = image[::-1, :, :, :]
-        elif axis == 1:
+        axis = randint(0, 1)
+        if axis == 0:
             image = image[:, ::-1, :, :]
-        else:
+        axis = randint(0, 1)
+        if axis == 0:
             image = image[:, :, ::-1, :]
         return image
 
@@ -221,87 +221,6 @@ class Generator_convlstm:
             raise ValueError('3d generator flip error')
         return image
 
-class Generator_2d_slice:
-    def __init__(self, files,axis,batchsize):
-        self.axis = axis
-        if axis == 'x':
-            size = crop_setting['2d166']['x'][1] - crop_setting['2d166']['x'][0]
-        elif axis == 'y':
-            size = crop_setting['2d166']['y'][1] - crop_setting['2d166']['y'][0]
-        elif axis == 'z':
-            size = crop_setting['2d166']['z1'][1] - crop_setting['2d166']['z1'][0]
-        else:
-            raise ValueError('generator 2d slice axis error')
-        self.flip_axis = ['x','y','z']
-        self.flip_axis.remove(axis)
-
-        self.images = []
-        self.labels = []
-        for i in [1, 2]:
-            for shift in range(size):
-                for f in files:
-                    self.images.append((IMAGE_PATH+f,i,shift))
-                    self.labels.append((LABEL_PATH+f,i,shift))
-
-
-
-        self.batchsize = batchsize
-        self.begin = 0
-        self.end = self.batchsize
-        self.index = list(range(0, len(self.images)))
-        np.random.shuffle(self.index)
-
-    def getitem(self, index):  # 返回的是tensor
-        image_file,h_id,shift = self.images[index]
-        label_file,h_id,shift = self.labels[index]
-        image = get_image(image_file)
-        label = get_image(label_file)
-        data = np.concatenate([image, label], axis=-1)
-        data = self.process(data, h_id,shift)
-        image = data[:,:,:,0]
-        label = data[:,:,:,1]
-
-        postion = 1 + WINDOW // 2
-        label = label[:, :, postion:postion + 1]
-
-        return image,label
-
-
-    def process(self, image, h_id,shift):
-        image = crop_2d_slice(image,h_id,self.axis,shift)
-        image = self.flip(image)
-        image = swap_axis(image,'slice',self.axis)
-        return image
-
-    def get_batch_data(self):
-        batch_image = []
-        batch_label = []
-        for i in self.index[self.begin:self.end]:
-            image,label = self.getitem(i)
-            batch_image.append(image)
-            batch_label.append(label)
-
-        self.begin = self.end
-        self.end += self.batchsize
-        if self.end > len(self.labels):
-            np.random.shuffle(self.index)
-            self.begin = 0
-            self.end = self.batchsize
-
-        return np.array(batch_image),np.array(batch_label)
-
-    def flip(self,image):
-        axis = choice(self.flip_axis)
-        if axis == 'x':
-            image = image[::-1, :, :, :]
-        elif axis == 'y':
-            image = image[:, ::-1, :, :]
-        elif axis == 'z':
-            image = image[:, :, ::-1, :]
-        else:
-            raise ValueError('3d generator flip error')
-        return image
-
 def seg_recovery(y_pred,filename):
     label = load_image(PRE_LABEL_PATH + filename)
     shape = label.get_data().shape
@@ -310,7 +229,7 @@ def seg_recovery(y_pred,filename):
     h1 = y_pred[0].around()
     h2 = y_pred[1].around()
 
-    area = crop_setting['3d' + str(shape[2])]
+    area = crop_config['3d' + str(shape[2])]
 
     segment[
         area['x'][0]:area['x'][1],
@@ -329,23 +248,7 @@ def seg_recovery(y_pred,filename):
     save_image(img,OUTPUT+filename)
 
 def deal_label(modelname,label,axis=None):
-    if modelname == 'slice':
-        assert axis is not None
-        area = crop_setting['2d' + str(label.shape[2])]
-        if axis == 'z':
-            size = area[axis + '1'][1] - area[axis + '1'][0]
-        else:
-            size = area[axis][1] - area[axis][0]
-        h1 = []
-        h2 = []
-        for i in range(size):
-            slice_h1 = crop_2d_slice(label,1,axis,i)[:,:,:,0]
-            slice_h2 = crop_2d_slice(label,2,axis,i)[:,:,:,0]
-            slice_h1 = swap_axis(slice_h1,'slice',axis)
-            slice_h2 = swap_axis(slice_h2,'slice',axis)
-            h1.append(slice_h1)
-            h2.append(slice_h2)
-    elif modelname == 'convlstm':
+    if modelname == 'convlstm':
         assert axis is not None
         h1 = crop_3d(label,1)
         h2 = crop_3d(label,2)
@@ -357,48 +260,5 @@ def deal_label(modelname,label,axis=None):
     else:
         raise ValueError("don't have this model")
     return h1,h2
-
-def inference(model,modelname,image,axis=None):
-    if modelname == 'slice':
-        assert axis is not None
-        area = crop_setting['2d'+str(image.shape[2])]
-        if axis == 'z':
-            size = area[axis+'1'][1]-area[axis+'1'][0]
-        else:
-            size =  area[axis][1] - area[axis][0]
-
-        seq_slice_h1 = []
-        seq_slice_h2 = []
-        for i in range(size):
-            slice_h1 = crop_2d_slice(image,1,axis,i)[:,:,:,0]
-            slice_h2 = crop_2d_slice(image,2,axis,i)[:,:,:,0]
-            slice_h1 = swap_axis(slice_h1,'slice',axis)
-            slice_h2 = swap_axis(slice_h2,'slice',axis)
-            seq_slice_h1.append(slice_h1)
-            seq_slice_h2.append(slice_h2)
-
-        y_pred_h1 = model.predict(np.array(seq_slice_h1))
-        y_pred_h2 = model.predict(np.array(seq_slice_h2))
-        h1 = []
-        h2 = []
-        for i in range(size):
-            h1.append(swap_axis(y_pred_h1[i],'slice',axis))
-            h2.append(swap_axis(y_pred_h2[i],'slice',axis))
-    elif modelname == 'convlstm':
-        assert axis is not None
-        h1 = crop_3d(image,1)
-        h2 = crop_3d(image,2)
-        h1 = swap_axis(h1,'convlstm',axis)
-        h2 = swap_axis(h2,'convlstm', axis)
-        h1 = model.predict(np.array([h1]))[0]
-        h2 = model.predict(np.array([h2]))[0]
-    elif modelname == 'Unet':
-        h1 = crop_3d(image, 1)
-        h2 = crop_3d(image, 2)
-        h1 = model.predict_on_batch(np.array([h1]))[0]
-        h2 = model.predict_on_batch(np.array([h2]))[0]
-    else:
-        raise ValueError("don't have this model")
-    return np.array(h1),np.array(h2)
 
 

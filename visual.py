@@ -6,8 +6,6 @@ import json
 import multiprocessing as mlp
 import numpy as np
 import SimpleITK as sitk
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 def image_anaylizer(images,labels):
     pos = {
@@ -371,14 +369,21 @@ def get_range(images_info):
 
 
 def test():
-    files = get_files(PRE_LABEL_PATH,prefix=False)
-    for f in tqdm(files):
-        label = load_image(PRE_LABEL_PATH+f)
-        image = load_image(PRE_IMAGE_PATH+f).get_data()
-        print(image,label)
-    # h=sorted(h)
-    # sns.distplot(h, rug=True,bins=10)
-    # plt.show()
+    import SimpleITK as sitk
+
+    f = "ADNI_062_S_1099_MR_MPR__GradWarp__B1_Correction__N3__Scaled_Br_20070424130119480_S22713_I50557.nii.gz"
+    img = sitk.ReadImage(f)
+
+    resample = sitk.ResampleImageFilter()
+    resample.SetInterpolator(sitk.sitkLinear)
+    resample.SetReferenceImage(img)
+    # resample.SetOutputDirection(img.GetDirection())
+    # resample.SetOutputOrigin(img.GetOrigin())
+    # resample.SetOutputSpacing(img.GetSpacing())
+    translation = sitk.TranslationTransform(3, (60,60,60))
+    resample.SetTransform(translation)
+    newimage = resample.Execute(img)
+    print(newimage)
 
 if __name__=='__main__':
     test()
