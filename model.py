@@ -12,11 +12,14 @@ import numpy as np
 from keras import backend as K
 from keras.layers import Conv3D,BatchNormalization,Conv3DTranspose,Input,MaxPool3D,Activation,Lambda,Permute
 from keras.layers import concatenate,ConvLSTM2D,TimeDistributed,Conv2D,Conv2DTranspose,MaxPool2D,Bidirectional,add
+from keras.layers import Reshape
 from keras.models import Model
 from keras.optimizers import Nadam,RMSprop
 from sklearn.metrics import roc_auc_score
 
-def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=1):
+
+
+def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=1,depthfilter=4,stride=1):
     def conv_block(input_layer,filters,k=3):
         y = Conv3D(filters=filters, kernel_size=k, padding='same')(input_layer)
         y = BatchNormalization()(y)
@@ -50,22 +53,15 @@ def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=1):
     elif block_name == 'inception':
         filters = filters//4
 
-        # c1 = Conv3D(filters=filters, kernel_size=1, padding='same')(input_layer)
         c1 = conv_block(input_layer,filters,1)
 
-        # c3 = Conv3D(filters=filters, kernel_size=1, padding='same')(input_layer)
-        # c3 = Conv3D(filters=filters, kernel_size=3, padding='same')(c3)
         c3 = conv_block(input_layer,filters,1)
         c3 = conv_block(c3,filters,3)
 
         c5 = MaxPool3D(pool_size=3,padding='same',strides=1)(input_layer)
-        # c5 = Conv3D(filters=filters, kernel_size=3, padding='same')(c5)
         c5 = conv_block(c5,filters,3)
 
 
-        # c7 = Conv3D(filters=filters, kernel_size=1, padding='same')(input_layer)
-        # c7 = Conv3D(filters=filters, kernel_size=3, padding='same')(c7)
-        # c7 = Conv3D(filters=filters, kernel_size=3, padding='same')(c7)
         c7 = conv_block(input_layer,filters,1)
         c7 = conv_block(c7, filters, 3)
         c7 = conv_block(c7, filters, 3)
@@ -73,18 +69,20 @@ def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=1):
         y = concatenate([c1,c3,c5,c7])
         # c_all = BatchNormalization()(c_all)
         # y = Activation('relu')(c_all)
+    elif block_name == 'sep':
+        input_layer = Permute((4,1,2,3))(input_layer)
+        sz = input_layer.get_shape()
+        shape = tuple(int(sz[i]) for i in range(1, 5))
+        input_layer = Reshape(shape+(1,))(input_layer)
+        conv1 = TimeDistributed(Conv3D(filters=depthfilter,kernel_size=kernal_size,padding='same',strides=stride))(input_layer)
+        conv1 = Permute((2,3,4,1,5))(conv1)
+        sz = conv1.get_shape()
+        shape = tuple(int(sz[i]) for i in range(1, 4))
+        conv1 = Reshape(shape+(-1,))(conv1)
+        conv1 = Conv3D(filters=filters,kernel_size=1,padding='same')(conv1)
+        conv1 = BatchNormalization()(conv1)
+        y = Activation('relu')(conv1)
 
-    elif block_name == 'conv_2d':
-        y = Conv2D(filters=filters, kernel_size=kernal_size,strides=1, padding='same')(input_layer)
-        y = BatchNormalization()(y)
-        y = Activation('relu')(y)
-    elif block_name == 'deconv_2d':
-        y = Conv2DTranspose(filters=filters, kernel_size=kernal_size, strides=2, padding='same')(input_layer)
-        y = BatchNormalization()(y)
-        y = Activation('relu')(y)
-    elif block_name == 'deeplab_block':
-        y = Conv2D(filters=filters, kernel_size=3, padding='same', dilation_rate=dilation_rate)(input_layer)
-        y = MaxPool2D((2, 2), strides=2,  padding='same')(y)
     else:
         raise ValueError("layer error")
     return y
@@ -93,24 +91,26 @@ def block_warp(block_name,input_layer,filters,kernal_size=3, dilation_rate=1):
 def get_model(modelname,axis=None,loss=None):
     if modelname == 'Unet':
         x = Input((80,80,40,1))
-        conv0 = block_warp('conv',x,24)
-        conv1 = block_warp('conv', MaxPool3D(padding='same',strides=2)(conv0),48)
+        conv0 = block_warp('conv',x,32)
+        downconv1 = Conv3D(48,kernel_size=3,strides=2,padding='same')(conv0)
+        downconv1 = BatchNormalization()(downconv1)
+        downconv1 = Activation('relu')(downconv1)
 
-        conv2 = block_warp('conv', MaxPool3D(padding='same',strides=2)(conv1),96)
+        conv1 = block_warp('conv',downconv1,64)
+        downconv2 = Conv3D(96, kernel_size=3, strides=2, padding='same')(conv1)
+        downconv2 = BatchNormalization()(downconv2)
+        downconv2 = Activation('relu')(downconv2)
+        conv2 = block_warp('conv',downconv2,128)
 
-        deconv1 = block_warp('deconv', conv2,48)
-        # conv1 = block_warp('conv',conv1,64)
-        # conv1 = block_warp('conv',conv1,32)
-        deconv1 = block_warp('conv', concatenate([deconv1,conv1]),48)
+        deconv1 = block_warp('deconv', conv2,64)
+        deconv1 = block_warp('conv', concatenate([deconv1,conv1]),64)
 
-        deconv2 = block_warp('deconv', deconv1,24)
-        # conv0 = block_warp('conv', conv0, 32)
-        # conv0 = block_warp('conv', conv0, 16).....
-        deconv2 = block_warp('conv', concatenate([deconv2, conv0]),48)
+        deconv2 = block_warp('deconv', deconv1,32)
+        deconv2 = block_warp('conv', concatenate([deconv2, conv0]),64)
 
-        output = Conv3D(filters=1,kernel_size=3,padding='same')(deconv2)
+        output = Conv3D(filters=1,kernel_size=3,padding='same',activation='tanh')(deconv2)
         # output = BatchNormalization()(output)
-        # output =
+
 
     elif modelname == 'convlstm':
         assert axis is not None
@@ -124,31 +124,31 @@ def get_model(modelname,axis=None,loss=None):
             raise ValueError("convlstm axis error")
 
 
-        conv0 = block_warp('conv',x,8)
-        encoder = Conv3D(16,kernel_size=3,padding='same',activation='relu',strides=2)(conv0)
+        conv0 = block_warp('conv',x,32)
+        downconv1 = Conv3D(48, kernel_size=3, strides=2, padding='same')(conv0)
+        downconv1 = BatchNormalization()(downconv1)
+        downconv1 = Activation('relu')(downconv1)
 
-        x_z = encoder
-        x_x = Permute((3, 2, 1, 4))(encoder)
-        x_y = Permute((2, 1, 3, 4))(encoder)
+        x_z = downconv1
+        x_x = Permute((3, 2, 1, 4))(downconv1)
+        x_y = Permute((2, 1, 3, 4))(downconv1)
 
-        lstm_z = Bidirectional(ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3)
+        lstm_z = Bidirectional(ConvLSTM2D(filters=64,padding='same',return_sequences=True,kernel_size=3)
                                 ,merge_mode='sum')(x_z)
 
 
-        lstm_y = Bidirectional(ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3)
+        lstm_y = Bidirectional(ConvLSTM2D(filters=64,padding='same',return_sequences=True,kernel_size=3)
                                , merge_mode='sum')(x_y)
         lstm_y = Permute((2,1,3,4))(lstm_y)
 
 
-        lstm_x = Bidirectional((ConvLSTM2D(filters=32,padding='same',return_sequences=True,kernel_size=3))
+        lstm_x = Bidirectional((ConvLSTM2D(filters=64,padding='same',return_sequences=True,kernel_size=3))
                                , merge_mode='sum')(x_x)
         lstm_x = Permute((3,2,1,4))(lstm_x)
 
+        deconv1 = block_warp('conv', concatenate([lstm_x,lstm_y,lstm_z]),96)
 
-        add_layer = add([lstm_x,lstm_y,lstm_z])
-
-
-        decoder = Conv3DTranspose(filters=32,kernel_size=3,strides=2,padding='same')(add_layer)
+        decoder = Conv3DTranspose(filters=64,kernel_size=3,strides=2,padding='same')(deconv1)
 
         # conv1 = block_warp('conv',conv0,32)
         #
@@ -162,10 +162,11 @@ def get_model(modelname,axis=None,loss=None):
 
     assert loss is not None
 
-    # with tf.device('/cpu:0'):
+    # with tf.device('/gpu:3'):
     model = Model(inputs=[x],outputs=[output])
-    # model = multi_gpu_model(model,gpus=3)
-    model.compile(optimizer=Nadam(lr=0.001,clipnorm=1),loss=loss,metrics=[diceMetric])
+    # model = multi_gpu_model(model,gpus=4)
+
+    model.compile(optimizer=Nadam(lr=0.0003),loss=loss,metrics=[diceMetric])
     print(model.summary())
     return model
 

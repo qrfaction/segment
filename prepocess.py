@@ -4,7 +4,6 @@ from setting import IMAGE_PATH,LABEL_PATH,PRE_IMAGE_PATH,PRE_LABEL_PATH,INFO
 import numpy as np
 from tqdm import tqdm
 import json
-import cv2
 
 def get_shape():
     images = get_files(PRE_IMAGE_PATH,prefix=False)

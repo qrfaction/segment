@@ -31,7 +31,7 @@ def seg_recovery(files,model_settings):
     for f in files:
         img_3d = load_image(TEST_DATA+f)
         image = img_3d.get_data()
-        image = normlize_data(image)
+        # image = normlize_data(image)
         result_h1 = []
         result_h2 = []
         for setting in tqdm(model_settings):

@@ -118,8 +118,8 @@ class Generator_3d:
         return image,label
 
     def process(self,image,h_id,file):
-        # area = select_area(self.img_info[file], h_id)
-        image = crop_3d(image,h_id)
+        area = select_area(self.img_info[file], h_id)
+        image = crop_3d(image,h_id,area)
         image = self.flip(image)
         return image
 
